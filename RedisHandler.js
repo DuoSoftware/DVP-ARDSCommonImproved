@@ -111,9 +111,9 @@ redLock.on('clientError', function(err) {
 var rSet = function (logKey, key, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SET :: key: %s :: value: %s', logKey, key, value);
-
     try{
+        logger.info('LogKey: %s - Redis SET :: key: %s :: value: %s', logKey, key, value);
+
         client.set(key, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SET failed :: %s', logKey, err);
@@ -134,9 +134,9 @@ var rSet = function (logKey, key, value) {
 var rSetNx = function (logKey, key, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SET NX :: key: %s :: value: %s', logKey, key, value);
-
     try{
+        logger.info('LogKey: %s - Redis SET NX :: key: %s :: value: %s', logKey, key, value);
+
         client.setnx(key, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SET NX failed :: %s', logKey, err);
@@ -157,9 +157,9 @@ var rSetNx = function (logKey, key, value) {
 var rGet = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis GET :: key: %s :: value: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis GET :: key: %s :: value: %s', logKey, key);
+
         client.get(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis GET failed :: %s', logKey, err);
@@ -180,9 +180,9 @@ var rGet = function (logKey, key) {
 var rMGet = function (logKey, keys) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis MGET :: keys: %s :: value: %j', logKey, keys);
-
     try{
+        logger.info('LogKey: %s - Redis MGET :: keys: %s :: value: %j', logKey, keys);
+
         client.mget(keys, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis MGET failed :: %s', logKey, err);
@@ -203,9 +203,9 @@ var rMGet = function (logKey, keys) {
 var rDel = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis DEL :: key: %s :: value: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis DEL :: key: %s :: value: %s', logKey, key);
+
         client.del(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis GET failed :: %s', logKey, err);
@@ -226,9 +226,9 @@ var rDel = function (logKey, key) {
 var rIncr = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis INCR :: key: %s :: value: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis INCR :: key: %s :: value: %s', logKey, key);
+
         client.incr(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis INCR failed :: %s', logKey, err);
@@ -249,9 +249,9 @@ var rIncr = function (logKey, key) {
 var rExists = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis Exists :: key: %s :: value: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis Exists :: key: %s :: value: %s', logKey, key);
+
         client.exists(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis Exists failed :: %s', logKey, err);
@@ -273,9 +273,9 @@ var rExists = function (logKey, key) {
 var rRPush = function (logKey, key, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis RPush :: key: %s :: value: %s', logKey, key, value);
-
     try{
+        logger.info('LogKey: %s - Redis RPush :: key: %s :: value: %s', logKey, key, value);
+
         client.rpush(key, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis RPush failed :: %s', logKey, err);
@@ -296,9 +296,9 @@ var rRPush = function (logKey, key, value) {
 var rLPush = function (logKey, key, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis LPush :: key: %s :: value: %s', logKey, key, value);
-
     try{
+        logger.info('LogKey: %s - Redis LPush :: key: %s :: value: %s', logKey, key, value);
+
         client.lpush(key, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis LPush failed :: %s', logKey, err);
@@ -319,9 +319,9 @@ var rLPush = function (logKey, key, value) {
 var rLPop = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis LPop :: key: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis LPop :: key: %s', logKey, key);
+
         client.lpop(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis LPop failed :: %s', logKey, err);
@@ -342,9 +342,9 @@ var rLPop = function (logKey, key) {
 var rLLen = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis LLen :: key: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis LLen :: key: %s', logKey, key);
+
         client.llen(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis LLen failed :: %s', logKey, err);
@@ -365,9 +365,9 @@ var rLLen = function (logKey, key) {
 var rLRange = function (logKey, key, start, stop) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis LRange :: key: %s :: start: %s :: stop: %s', logKey, key, start, stop);
-
     try{
+        logger.info('LogKey: %s - Redis LRange :: key: %s :: start: %s :: stop: %s', logKey, key, start, stop);
+
         client.lrange(key, start, stop, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis LRange failed :: %s', logKey, err);
@@ -388,9 +388,9 @@ var rLRange = function (logKey, key, start, stop) {
 var rLRem = function (logKey, key, count, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis LRem :: key: %s :: count: %s :: value: %s', logKey, key, count, value);
-
     try{
+        logger.info('LogKey: %s - Redis LRem :: key: %s :: count: %s :: value: %s', logKey, key, count, value);
+
         client.lrem(key, count, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis LRem failed :: %s', logKey, err);
@@ -412,9 +412,9 @@ var rLRem = function (logKey, key, count, value) {
 var rHSet = function (logKey, key, field, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HSET :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
-
     try{
+        logger.info('LogKey: %s - Redis HSET :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
+
         client.hset(key, field, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HSET failed :: %s', logKey, err);
@@ -435,9 +435,9 @@ var rHSet = function (logKey, key, field, value) {
 var rHSetNx = function (logKey, key, field, value) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HSETNX :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
-
     try{
+        logger.info('LogKey: %s - Redis HSETNX :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
+
         client.hsetnx(key, field, value, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HSETNX failed :: %s', logKey, err);
@@ -458,9 +458,9 @@ var rHSetNx = function (logKey, key, field, value) {
 var rHGet = function (logKey, key, field) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HGET :: key: %s ::  field: %s', logKey, key, field);
-
     try{
+        logger.info('LogKey: %s - Redis HGET :: key: %s ::  field: %s', logKey, key, field);
+
         client.hget(key, field, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HGET failed :: %s', logKey, err);
@@ -481,9 +481,9 @@ var rHGet = function (logKey, key, field) {
 var rHDel = function (logKey, key, field) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HDEL :: key: %s ::  field: %s', logKey, key, field);
-
     try{
+        logger.info('LogKey: %s - Redis HDEL :: key: %s ::  field: %s', logKey, key, field);
+
         client.hdel(key, field, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HDEL failed :: %s', logKey, err);
@@ -504,9 +504,9 @@ var rHDel = function (logKey, key, field) {
 var rHExists = function (logKey, key, field) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HExists :: key: %s ::  field: %s', logKey, key, field);
-
     try{
+        logger.info('LogKey: %s - Redis HExists :: key: %s ::  field: %s', logKey, key, field);
+
         client.hexists(key, field, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HExists failed :: %s', logKey, err);
@@ -527,9 +527,9 @@ var rHExists = function (logKey, key, field) {
 var rHVals = function (logKey, key) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis HVALS :: key: %s :: value: %s', logKey, key);
-
     try{
+        logger.info('LogKey: %s - Redis HVALS :: key: %s :: value: %s', logKey, key);
+
         client.hvals(key, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis HVALS failed :: %s', logKey, err);
@@ -551,9 +551,9 @@ var rHVals = function (logKey, key) {
 var rSAdd = function (logKey, key, member) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SADD :: key: %s :: member: %s', logKey, key, member);
-
     try{
+        logger.info('LogKey: %s - Redis SADD :: key: %s :: member: %s', logKey, key, member);
+
         client.sadd(key, member, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SADD failed :: %s', logKey, err);
@@ -574,9 +574,9 @@ var rSAdd = function (logKey, key, member) {
 var rSRem = function (logKey, key, member) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SREM :: key: %s :: member: %s', logKey, key, member);
-
     try{
+        logger.info('LogKey: %s - Redis SREM :: key: %s :: member: %s', logKey, key, member);
+
         client.srem(key, member, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SREM failed :: %s', logKey, err);
@@ -597,9 +597,9 @@ var rSRem = function (logKey, key, member) {
 var rSIsMember = function (logKey, key, member) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SISMEMBER :: key: %s :: member: %s', logKey, key, member);
-
     try{
+        logger.info('LogKey: %s - Redis SISMEMBER :: key: %s :: member: %s', logKey, key, member);
+
         client.sismember(key, member, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SISMEMBER failed :: %s', logKey, err);
@@ -620,9 +620,9 @@ var rSIsMember = function (logKey, key, member) {
 var rSInter = function (logKey, keys) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SINTER :: keys: %j', logKey, keys);
-
     try{
+        logger.info('LogKey: %s - Redis SINTER :: keys: %j', logKey, keys);
+
         client.sinter(keys, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SINTER failed :: %s', logKey, err);
@@ -643,9 +643,9 @@ var rSInter = function (logKey, keys) {
 var rSMove = function (logKey, source, destination, member) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis SMOVE :: source: %s :: destination: %s :: member: %s', logKey, source, destination, member);
-
     try{
+        logger.info('LogKey: %s - Redis SMOVE :: source: %s :: destination: %s :: member: %s', logKey, source, destination, member);
+
         client.smove(source, destination, member, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis SMOVE failed :: %s', logKey, err);
@@ -668,9 +668,9 @@ var rSMove = function (logKey, source, destination, member) {
 var rPublish = function (logKey, pattern, message) {
     var deferred = q.defer();
 
-    logger.info('LogKey: %s - Redis Publish :: pattern: %s :: message: %s', logKey, pattern, message);
-
     try{
+        logger.info('LogKey: %s - Redis Publish :: pattern: %s :: message: %s', logKey, pattern, message);
+
         client.publish(pattern, message, function (err, result) {
             if(err){
                 logger.error('LogKey: %s - Redis Publish failed :: %s', logKey, err);
@@ -687,3 +687,60 @@ var rPublish = function (logKey, pattern, message) {
 
     return deferred.promise;
 };
+
+
+//***Pipeline***
+var rPipeline  = function (logKey, commands) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - Redis Pipeline :: commands: %j', logKey, commands);
+
+        client.pipeline(commands).exec(function (err, result) {
+            if(err){
+                logger.error('LogKey: %s - Redis Pipeline failed :: %s', logKey, err);
+                deferred.reject(err);
+            }else{
+                logger.info('LogKey: %s - Redis Pipeline success :: %s', logKey, result);
+                deferred.resolve(result);
+            }
+        });
+    }catch(ex){
+        logger.error('LogKey: %s - Redis Pipeline failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+module.exports.R_Set = rSet;
+module.exports.R_SetNx = rSetNx;
+module.exports.R_Get = rGet;
+module.exports.R_MGet = rMGet;
+module.exports.R_Del = rDel;
+module.exports.R_Incr = rIncr;
+module.exports.R_Exists = rExists;
+
+module.exports.R_RPush = rRPush;
+module.exports.R_LPush = rLPush;
+module.exports.R_LPop = rLPop;
+module.exports.R_LLen = rLLen;
+module.exports.R_LRange = rLRange;
+module.exports.R_LRem = rLRem;
+
+module.exports.R_HSet = rHSet;
+module.exports.R_HSetNx = rHSetNx;
+module.exports.R_HGet = rHGet;
+module.exports.R_HDel = rHDel;
+module.exports.R_HExists = rHExists;
+module.exports.R_HVals = rHVals;
+
+module.exports.R_SAdd = rSAdd;
+module.exports.R_SRem = rSRem;
+module.exports.R_SIsMember = rSIsMember;
+module.exports.R_SInter = rSInter;
+module.exports.R_SMove = rSMove;
+
+module.exports.R_Publish = rPublish;
+
+module.exports.R_Pipeline = rPipeline;
