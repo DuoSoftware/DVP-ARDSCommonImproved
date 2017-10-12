@@ -157,7 +157,7 @@ var validateState = function (logKey, tenant, company, resourceId, reason) {
             deferred.resolve(returnData);
         }else{
 
-            var resourceKey = util.format('Resource:%d:%d:%s', company, tenant, resourceId);
+            var resourceKey = util.format('Resource:%d:%d:%s', tenant, company, resourceId);
             redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
 
                 if (resourceData) {
@@ -311,7 +311,7 @@ var setResourceStatusChangeInfo = function (logKey, tenant, company, resourceId,
             }
         ];
 
-        async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+        async.parallel(async.reflectAll(asyncTasks), function () {
             logger.info('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo :: Process finished', logKey);
             deferred.resolve("Set resource status change info process finished");
         });
@@ -334,7 +334,7 @@ var setResourceState = function (logKey, tenant, company, resourceId, resourceNa
 
             if(result.isRequestValid){
 
-                var stateKey = util.format('ResourceState:%d:%d:%s', company, tenant, resourceId);
+                var stateKey = util.format('ResourceState:%d:%d:%s', tenant, company, resourceId);
                 processState(logKey, tenant, company, stateKey, resourceId, resourceName, state, reason).then(function (statusObj) {
 
                     redisHandler.R_Set(logKey, stateKey, JSON.stringify(statusObj)).then(function () {

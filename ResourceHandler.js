@@ -248,7 +248,7 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                                     }).then(function (concurrencyDataResult) {
 
                                         logger.info('LogKey: %s - ResourceHandler - Set concurrency data success :: %s', logKey, concurrencyDataResult);
-                                        return tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', concurrencyDataTags, resourceKey);
+                                        return tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', concurrencyDataTags, concurrencyDataKey);
 
                                     }).then(function (concurrencyTagResult) {
 
@@ -314,7 +314,7 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                                         }).then(function (slotDataResult) {
 
                                             logger.info('LogKey: %s - ResourceHandler - Set slot data success :: %s', logKey, slotDataResult);
-                                            return tagHandler.SetTags(logKey, 'Tag:SlotInfo', slotDataTags, resourceKey);
+                                            return tagHandler.SetTags(logKey, 'Tag:SlotInfo', slotDataTags, slotDataKey);
 
                                         }).then(function (slotTagResult) {
 
@@ -425,12 +425,110 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
     return deferred.promise;
 };
 
-setResourceLogin('test', 1, 103, 108, 'Rusiru', [{
-    "Type": "CALL",
-    "Contact": {
-        "ContactName": "9501",
-        "Domain": "duo.media1.veery.cloud",
-        "Extention": "9501",
-        "ContactType": "PRIVATE"
+var removeResource = function (logKey, tenant, company, resourceId) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - ResourceHandler - RemoveResource :: tenant: %d :: company: %d :: resourceId: %s', logKey, tenant, company, resourceId);
+
+        var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
+        var resourceVersionKey = util.format('Version:Resource:%d:%d:%d', tenant, company, resourceId);
+        
+        redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
+
+            if(resourceData){
+
+                var resourceObj = JSON.parse(resourceData);
+
+                var asyncTasks = [];
+                
+                resourceObj.ConcurrencyInfo.forEach(function (concurrencyKey) {
+
+                    var concurrencyVersionKey = util.format('Version:%s', concurrencyKey);
+
+                    asyncTasks.push(
+                        function (callback) {
+
+                            tagHandler.RemoveTags(logKey, concurrencyKey).then(function (result) {
+
+                                logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s tag process :: %s', logKey, concurrencyKey, result);
+                                return redisHandler.R_Del(logKey, concurrencyVersionKey);
+
+                            }).then(function (result) {
+
+                                logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s version process :: %s', logKey, concurrencyVersionKey, result);
+                                return redisHandler.R_Del(logKey, concurrencyKey);
+
+                            }).then(function (result) {
+
+                                logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s process :: %s', logKey, concurrencyKey, result);
+                                callback(null, result);
+
+                            }).catch(function (ex) {
+
+                                logger.error('LogKey: %s - ResourceHandler - RemoveResource - Remove %s process failed :: %s', logKey, concurrencyKey, ex);
+                                callback(ex, null);
+                            });
+
+                        }  
+                    );
+                });
+
+                async.parallel(asyncTasks, function (err) {
+
+                    if(err){
+
+                        logger.error('LogKey: %s - ResourceHandler - RemoveResource failed :: %s', logKey, err);
+                        deferred.reject(err);
+                    }else{
+
+                        tagHandler.RemoveTags(logKey, resourceKey).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s tag process :: %s', logKey, resourceKey, result);
+                            return redisHandler.R_Del(logKey, resourceVersionKey);
+
+                        }).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s version process :: %s', logKey, resourceVersionKey, result);
+                            return redisHandler.R_Del(logKey, resourceKey);
+
+                        }).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s process :: %s', logKey, resourceKey, result);
+                            deferred.resolve(result);
+
+                        }).catch(function (ex) {
+
+                            logger.error('LogKey: %s - ResourceHandler - RemoveResource - Remove %s process failed :: %s', logKey, resourceKey, ex);
+                            deferred.reject(ex);
+                        });
+
+                    }
+
+                });
+
+            }else{
+
+                logger.error('LogKey: %s - ResourceHandler - RemoveResource - No logged in resource data found', logKey);
+                deferred.reject(ex.message);
+            }
+            
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - RemoveResource - R_Get failed', logKey);
+            deferred.reject(ex.message);
+        })
+
+    }catch(ex){
+
+        logger.error('LogKey: %s - ResourceHandler - RemoveResource failed :: %s', logKey, ex);
+        deferred.reject(ex.message);
     }
-}]);
+
+    return deferred.promise;
+};
+
+
+
+module.exports.SetResourceLogin = setResourceLogin;
+module.exports.RemoveResource = removeResource;

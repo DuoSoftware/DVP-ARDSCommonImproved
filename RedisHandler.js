@@ -158,7 +158,7 @@ var rGet = function (logKey, key) {
     var deferred = q.defer();
 
     try{
-        logger.info('LogKey: %s - Redis GET :: key: %s :: value: %s', logKey, key);
+        logger.info('LogKey: %s - Redis GET :: key: %s', logKey, key);
 
         client.get(key, function (err, result) {
             if(err){

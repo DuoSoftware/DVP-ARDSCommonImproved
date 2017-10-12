@@ -60,7 +60,7 @@ var removeTags = function (logKey, tagValue) {
     try{
         logger.info('LogKey: %s - TagHandler - RemoveTags :: tagReference: %s', logKey, tagReference);
 
-        redisHandler.R_SMembers(tagReference).then(function (tagRefValues) {
+        redisHandler.R_SMembers(logKey, tagReference).then(function (tagRefValues) {
 
             if(tagRefValues){
 
@@ -69,7 +69,7 @@ var removeTags = function (logKey, tagValue) {
                     pipeCommands.push([
                         'srem',
                         tagRefValue,
-                        tagReference
+                        tagValue
                     ]);
                 });
 
@@ -78,14 +78,14 @@ var removeTags = function (logKey, tagValue) {
                     redisHandler.R_Pipeline(logKey, pipeCommands).then(function (result) {
 
                         logger.info('LogKey: %s - TagHandler - RemoveTags :: pipe commands execution success', logKey);
-                        return redisHandler.R_Del(tagReference);
+                        return redisHandler.R_Del(logKey, tagReference);
 
-                    }).then(function (result) {
+                    }).then(function () {
 
                         logger.info('LogKey: %s - TagHandler - RemoveTags :: Remove Tag reference success', logKey);
                         deferred.resolve('Tag execution finished');
 
-                    }).catch(function (ex) {
+                    }).catch(function () {
 
                         logger.error('LogKey: %s - TagHandler - RemoveTags :: Pipe commands execution failed', logKey);
                         deferred.reject('Pipe commands execution failed');
@@ -102,7 +102,7 @@ var removeTags = function (logKey, tagValue) {
                 deferred.resolve('No tag references found');
             }
             
-        }).catch(function (ex) {
+        }).catch(function () {
 
             logger.info('LogKey: %s - TagHandler - RemoveTags :: Get tag references failed', logKey);
             deferred.reject('Get Tag references failed');
