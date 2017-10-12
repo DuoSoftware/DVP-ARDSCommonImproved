@@ -571,6 +571,29 @@ var rSAdd = function (logKey, key, member) {
     return deferred.promise;
 };
 
+var rSMembers = function (logKey, key) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - Redis SMEMBERS :: key: %s', logKey, key);
+
+        client.smembers(key, function (err, result) {
+            if(err){
+                logger.error('LogKey: %s - Redis SMEMBERS failed :: %s', logKey, err);
+                deferred.reject(err);
+            }else{
+                logger.info('LogKey: %s - Redis SMEMBERS success :: %s', logKey, result);
+                deferred.resolve(result);
+            }
+        });
+    }catch(ex){
+        logger.error('LogKey: %s - Redis SMEMBERS failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
 var rSRem = function (logKey, key, member) {
     var deferred = q.defer();
 
@@ -736,6 +759,7 @@ module.exports.R_HExists = rHExists;
 module.exports.R_HVals = rHVals;
 
 module.exports.R_SAdd = rSAdd;
+module.exports.R_SMembers = rSMembers;
 module.exports.R_SRem = rSRem;
 module.exports.R_SIsMember = rSIsMember;
 module.exports.R_SInter = rSInter;

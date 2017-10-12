@@ -25,7 +25,7 @@ var getResourceDetails = function (logKey, tenant, company, resourceId) {
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -55,7 +55,7 @@ var getAttributeGroupWithDetails = function (logKey, tenant, company, attributeG
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -85,7 +85,7 @@ var getResourceTaskDetails = function (logKey, tenant, company, resourceId) {
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -115,7 +115,7 @@ var getResourceAttributeDetails = function (logKey, tenant, company, resourceTas
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -145,7 +145,7 @@ var getAttribute = function (logKey, tenant, company, attributeId) {
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -180,7 +180,7 @@ var addResourceStatusChangeInfo = function (logKey, tenant, company, resourceId,
         var statusObj = {StatusType:statusType, Status:status, Reason:reason, OtherData: sessionId};
 
         restClient.DoPostInternal(logKey, tenant, company, rUrl, statusObj).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -212,7 +212,7 @@ var addResourceStatusDurationInfo = function (logKey, tenant, company, resourceI
         var durationObj = {StatusType:statusType, Status:status, Reason:reason, OtherData: otherData, SessionId: sessionId, Duration: duration};
 
         restClient.DoPostInternal(logKey, tenant, company, rUrl, durationObj).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -244,7 +244,7 @@ var addResourceTaskRejectInfo = function (logKey, tenant, company, resourceId, t
         var rejectObj = {Task:task, Reason:reason, OtherData: otherData, SessionId: sessionId};
 
         restClient.DoPostInternal(logKey, tenant, company, rUrl, rejectObj).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -277,7 +277,7 @@ var getQueueSetting = function (logKey, tenant, company, queueId) {
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -309,7 +309,7 @@ var addQueueSetting = function (logKey, tenant, company, queueName, skills, serv
         var queueSettingObj = {QueueName :queueName,MaxWaitTime:"0",Skills:skills,PublishPosition:"false",CallAbandonedThreshold:"0",ServerType:serverType,RequestType:requestType};
 
         restClient.DoPostInternal(logKey, tenant, company, rUrl, queueSettingObj).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);

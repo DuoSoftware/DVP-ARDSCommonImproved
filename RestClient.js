@@ -52,7 +52,7 @@ var doPostInternal = function (logKey, tenant, company, url, postData) {
 
         var options = {
             url: url,
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'content-type': 'application/json',
                 'authorization': util.format('bearer %s', config.Services.accessToken),
@@ -88,7 +88,7 @@ var doPostNotification = function (logKey, tenant, company, url, eventName, even
 
         var options = {
             url: url,
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'content-type': 'application/json',
                 'authorization': util.format('bearer %s', config.Services.accessToken),
@@ -159,7 +159,7 @@ var doPostExternal = function (logKey, url, postData) {
 
         var options = {
             url: url,
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'content-type': 'application/json'
             },

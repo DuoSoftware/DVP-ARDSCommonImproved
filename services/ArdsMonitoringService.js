@@ -16,9 +16,9 @@ var sendResourceStatus = function (logKey, tenant, company, resourceId, addition
     try {
         logger.info('LogKey: %s - ArdsMonitoringService - SendResourceStatus :: tenant: %d :: company: %d :: resourceId: %s', logKey, tenant, company, resourceId);
 
-        var rUrl = util.format('http://%s/DVP/API/%s/MONITORING/resource/%s/status/publish', config.Services.ardsMonitoringServiceHost, config.Services.ardsMonitoringServiceVersion, resourceId);
+        var rUrl = util.format('http://%s/DVP/API/%s/ARDS/MONITORING/resource/%s/status/publish', config.Services.ardsMonitoringServiceHost, config.Services.ardsMonitoringServiceVersion, resourceId);
         if (validator.isIP(config.Services.ardsMonitoringServiceHost)) {
-            rUrl = util.format('http://%s:%s/DVP/API/%s/MONITORING/resource/%s/status/publish', config.Services.ardsMonitoringServiceHost, config.Services.ardsMonitoringServicePort, config.Services.ardsMonitoringServiceVersion, resourceId);
+            rUrl = util.format('http://%s:%s/DVP/API/%s/ARDS/MONITORING/resource/%s/status/publish', config.Services.ardsMonitoringServiceHost, config.Services.ardsMonitoringServicePort, config.Services.ardsMonitoringServiceVersion, resourceId);
         }
 
         if(additionalParams){
@@ -26,7 +26,7 @@ var sendResourceStatus = function (logKey, tenant, company, resourceId, addition
         }
 
         restClient.DoGetInternal(logKey, tenant, company, rUrl).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);

@@ -4,7 +4,7 @@
 
 
 var deepcopy = require('deepcopy');
-var async = reqire('async');
+var async = require('async');
 var q = require('q');
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var ardsMonitoringService = require('./services/ArdsMonitoringService');
@@ -12,64 +12,8 @@ var resourceService = require('./services/ResourceService');
 var scheduleWorkerService = require('./services/ScheduleWorkerService');
 var redisHandler = require('./RedisHandler');
 var moment = require('moment');
+var util = require('util');
 
-var setResourceStatusChangeInfo = function (logKey, tenant, company, resourceId, statusType, status, reason, otherData) {
-    var deferred = q.defer();
-
-    try {
-        logger.info('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo :: tenant: %d :: company: %d :: resourceId: %s :: statusType: %s :: status: %s :: reason: %s :: otherData: %j', logKey, tenant, company, resourceId, statusType, status, reason, otherData);
-
-        var param2 = deepcopy(reason);
-        var dashBoardReason = deepcopy(reason);
-        var sessionData = otherData.SessionId ? otherData.SessionId : "";
-
-        if ((status.toLowerCase() === "connected" || (status.toLowerCase() === 'completed' && reason.toLowerCase() === 'afterwork')) && otherData) {
-            param2 = util.format('%s%s', param2, otherData.Direction);
-        }
-
-        if (reason && reason.toLowerCase() !== "endbreak" && reason.toLowerCase().indexOf('break') > -1) {
-            dashBoardReason = 'Break';
-        }
-
-        var pubMessage = util.format("EVENT:%d:%d:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, statusType, status, dashBoardReason, resourceId, param2, resourceId);
-
-        var asyncTasks = [
-            function (callback) {
-                redisHandler.R_Publish(logKey, "events", pubMessage).then(function (result) {
-                    callback(null, result);
-                }).catch(function (ex) {
-                    callback(ex, null);
-                });
-            },
-            function (callback) {
-                ardsMonitoringService.SendResourceStatus(logKey, tenant, company, resourceId, undefined).then(function (result) {
-                    callback(null, result);
-                }).catch(function (ex) {
-                    callback(ex, null);
-                });
-            },
-            function (callback) {
-                resourceService.AddResourceStatusChangeInfo(logKey, tenant, company, resourceId, statusType, status, reason, sessionData).then(function (result) {
-                    callback(null, result);
-                }).catch(function (ex) {
-                    callback(ex, null);
-                });
-            }
-        ];
-
-        async.parallel(async.reflectAll(asyncTasks), function (err, results) {
-            logger.info('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo :: Process finished', logKey);
-            deferred.resolve("Set resource status change info process finished");
-        });
-
-
-    } catch (ex) {
-        logger.error('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo failed :: %s', logKey, ex);
-        deferred.reject(ex);
-    }
-
-    return deferred.promise;
-};
 
 var processState = function (logKey, tenant, company, stateKey, resourceId, resourceName, state, reason) {
     var deferred = q.defer();
@@ -322,7 +266,66 @@ var validateState = function (logKey, tenant, company, resourceId, reason) {
     return deferred.promise;
 };
 
-var SetResourceState = function (logKey, company, tenant, resourceId, resourceName, state, reason) {
+
+var setResourceStatusChangeInfo = function (logKey, tenant, company, resourceId, statusType, status, reason, otherData) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo :: tenant: %d :: company: %d :: resourceId: %s :: statusType: %s :: status: %s :: reason: %s :: otherData: %j', logKey, tenant, company, resourceId, statusType, status, reason, otherData);
+
+        var param2 = deepcopy(reason);
+        var dashBoardReason = deepcopy(reason);
+        var sessionData = otherData.SessionId ? otherData.SessionId : "";
+
+        if ((status.toLowerCase() === "connected" || (status.toLowerCase() === 'completed' && reason.toLowerCase() === 'afterwork')) && otherData) {
+            param2 = util.format('%s%s', param2, otherData.Direction);
+        }
+
+        if (reason && reason.toLowerCase() !== "endbreak" && reason.toLowerCase().indexOf('break') > -1) {
+            dashBoardReason = 'Break';
+        }
+
+        var pubMessage = util.format("EVENT:%d:%d:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, statusType, status, dashBoardReason, resourceId, param2, resourceId);
+
+        var asyncTasks = [
+            function (callback) {
+                redisHandler.R_Publish(logKey, "events", pubMessage).then(function (result) {
+                    callback(null, result);
+                }).catch(function (ex) {
+                    callback(ex, null);
+                });
+            },
+            function (callback) {
+                ardsMonitoringService.SendResourceStatus(logKey, tenant, company, resourceId, undefined).then(function (result) {
+                    callback(null, result);
+                }).catch(function (ex) {
+                    callback(ex, null);
+                });
+            },
+            function (callback) {
+                resourceService.AddResourceStatusChangeInfo(logKey, tenant, company, resourceId, statusType, status, reason, sessionData).then(function (result) {
+                    callback(null, result);
+                }).catch(function (ex) {
+                    callback(ex, null);
+                });
+            }
+        ];
+
+        async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+            logger.info('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo :: Process finished', logKey);
+            deferred.resolve("Set resource status change info process finished");
+        });
+
+
+    } catch (ex) {
+        logger.error('LogKey: %s - ResourceStatusMapper - SetResourceStatusChangeInfo failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var setResourceState = function (logKey, tenant, company, resourceId, resourceName, state, reason) {
     var deferred = q.defer();
 
     try{
@@ -374,3 +377,7 @@ var SetResourceState = function (logKey, company, tenant, resourceId, resourceNa
 
     return deferred.promise;
 };
+
+
+module.exports.SetResourceStatusChangeInfo = setResourceStatusChangeInfo;
+module.exports.SetResourceState = setResourceState;

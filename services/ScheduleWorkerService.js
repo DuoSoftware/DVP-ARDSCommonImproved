@@ -8,21 +8,12 @@ var validator = require('validator');
 var util = require('util');
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var format = require("stringformat");
-var redisHandler = require('./RedisHandler.js');
+var redisHandler = require('../RedisHandler.js');
 var Q = require('q');
 
 function getBreakThresholdValue(logKey, key) {
-    var deferred = Q.defer();
 
-    redisHandler.GetObj(logKey, key, function (err, result) {
-        if (err) {
-            deferred.reject(err);
-        }
-        else {
-            deferred.resolve(result);
-        }
-    });
-    return deferred.promise;
+    return redisHandler.R_Get(logKey, key);
 }
 
 function registerCronJob(company, tenant, reference, callbackData, mainServer, time, cb) {
@@ -59,7 +50,7 @@ function registerCronJob(company, tenant, reference, callbackData, mainServer, t
 
                 try {
 
-                    if (!_error && _response && _response.statusCode == 200 && _response.body && _response.body.IsSuccess) {
+                    if (!_error && _response && _response.code == 200 && _response.body && _response.body.IsSuccess) {
 
                         return cb(true, _response.body.Result);
 
@@ -108,7 +99,7 @@ function stopCronJob(company, tenant, id, cb) {
 
                 try {
 
-                    if (!_error && _response && _response.statusCode == 200 && _response.body && _response.body.IsSuccess) {
+                    if (!_error && _response && _response.code == 200 && _response.body && _response.body.IsSuccess) {
 
                         return cb(true, _response.body.Result);
 

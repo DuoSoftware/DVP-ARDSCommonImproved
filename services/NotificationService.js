@@ -23,7 +23,7 @@ var sendNotificationToRoom = function (logKey, tenant, company, roomName, eventN
         }
 
         restClient.DoPostNotification(logKey, tenant, company, rUrl, msgData).then(function (response) {
-            if(response.statusCode === 200){
+            if(response.code === 200){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
@@ -53,7 +53,7 @@ var sendNotificationInitiate = function (logKey, tenant, company, eventName, eve
         }
 
         restClient.DoPostNotification(logKey, tenant, company, rUrl, payload).then(function (response) {
-            if(response.statusCode >= 200 && response.statusCode <= 299){
+            if(response.code >= 200 && response.code <= 299){
                 deferred.resolve(response.result);
             }else{
                 deferred.resolve(undefined);
