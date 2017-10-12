@@ -4,7 +4,7 @@
 
 var resourceHandler = require('./ResourceHandler');
 
-//resourceHandler.SetResourceLogin('test', 1, 103, 108, 'Rusiru', [{
+//resourceHandler.AddResource('test', 1, 103, 108, 'Rusiru', [{
 //    "Type": "CALL",
 //    "Contact": {
 //        "ContactName": "9501",

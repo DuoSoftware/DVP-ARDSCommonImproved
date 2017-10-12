@@ -528,7 +528,65 @@ var removeResource = function (logKey, tenant, company, resourceId) {
     return deferred.promise;
 };
 
+var addResource = function (logKey, tenant, company, resourceId, username, handlingTypes) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - ResourceHandler - AddResource :: tenant: %d :: company: %d :: resourceId: %s', logKey, tenant, company, resourceId);
+
+        var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
+        redisHandler.R_Exists(logKey, resourceKey).then(function (result) {
+
+            if(result === 1){
+
+                removeResource(logKey, tenant, company, resourceId).then(function (result) {
+
+                    logger.info('LogKey: %s - ResourceHandler - AddResource - Remove existing resource success :: %s', logKey, result);
+                    setResourceLogin(logKey, tenant, company, resourceId, username, handlingTypes).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - AddResource - Set resource login success :: %s', logKey, result);
+                        deferred.resolve('Set resource login success');
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - AddResource - Set resource login failed :: %s', logKey, ex);
+                        deferred.reject('Set resource login failed');
+                    });
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - AddResource - Remove existing resource failed :: %s', logKey, ex);
+                    deferred.reject('Remove existing resource failed');
+                });
+
+            }else{
+
+                setResourceLogin(logKey, tenant, company, resourceId, username, handlingTypes).then(function (result) {
+
+                    logger.info('LogKey: %s - ResourceHandler - AddResource - Set resource login success :: %s', logKey, result);
+                    deferred.resolve('Set resource login success');
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - AddResource - Set resource login failed :: %s', logKey, ex);
+                    deferred.reject('Set resource login failed');
+                });
+            }
+
+        }).catch(function (ex) {
+            logger.error('LogKey: %s - ResourceHandler - AddResource - R_Exists failed', logKey);
+            deferred.reject(ex);
+        })
 
 
-module.exports.SetResourceLogin = setResourceLogin;
+    }catch(ex){
+        logger.error('LogKey: %s - ResourceHandler - AddResource failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+
 module.exports.RemoveResource = removeResource;
+module.exports.AddResource = addResource;

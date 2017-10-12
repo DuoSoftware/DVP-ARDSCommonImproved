@@ -181,7 +181,7 @@ var rMGet = function (logKey, keys) {
     var deferred = q.defer();
 
     try{
-        logger.info('LogKey: %s - Redis MGET :: keys: %s :: value: %j', logKey, keys);
+        logger.info('LogKey: %s - Redis MGET :: keys: %s', logKey, keys);
 
         client.mget(keys, function (err, result) {
             if(err){
@@ -204,19 +204,19 @@ var rDel = function (logKey, key) {
     var deferred = q.defer();
 
     try{
-        logger.info('LogKey: %s - Redis DEL :: key: %s :: value: %s', logKey, key);
+        logger.info('LogKey: %s - Redis DEL :: key: %s', logKey, key);
 
         client.del(key, function (err, result) {
             if(err){
-                logger.error('LogKey: %s - Redis GET failed :: %s', logKey, err);
+                logger.error('LogKey: %s - Redis DEL failed :: %s', logKey, err);
                 deferred.reject(err);
             }else{
-                logger.info('LogKey: %s - Redis GET success :: %s', logKey, result);
+                logger.info('LogKey: %s - Redis DEL success :: %s', logKey, result);
                 deferred.resolve(result);
             }
         });
     }catch(ex){
-        logger.error('LogKey: %s - Redis GET failed :: %s', logKey, ex);
+        logger.error('LogKey: %s - Redis DEL failed :: %s', logKey, ex);
         deferred.reject(ex);
     }
 
@@ -227,7 +227,7 @@ var rIncr = function (logKey, key) {
     var deferred = q.defer();
 
     try{
-        logger.info('LogKey: %s - Redis INCR :: key: %s :: value: %s', logKey, key);
+        logger.info('LogKey: %s - Redis INCR :: key: %s', logKey, key);
 
         client.incr(key, function (err, result) {
             if(err){
@@ -250,7 +250,7 @@ var rExists = function (logKey, key) {
     var deferred = q.defer();
 
     try{
-        logger.info('LogKey: %s - Redis Exists :: key: %s :: value: %s', logKey, key);
+        logger.info('LogKey: %s - Redis Exists :: key: %s', logKey, key);
 
         client.exists(key, function (err, result) {
             if(err){
