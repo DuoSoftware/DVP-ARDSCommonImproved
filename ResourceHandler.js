@@ -4,6 +4,7 @@
 
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var resourceService = require('./services/ResourceService');
+var ardsMonitoringService = require('./services/ArdsMonitoringService');
 var resourceStatusMapper = require('./ResourceStatusMapper');
 var redisHandler = require('./RedisHandler');
 var q = require('q');
@@ -12,107 +13,98 @@ var tagHandler = require('./TagHandler');
 var util = require('util');
 
 
-var preProcessResourceData = function (logKey, tenant, company, resourceId, handlingTypes) {
+var preProcessResourceData = function (logKey, tenant, company, resourceId, handlingType) {
     var deferred = q.defer();
 
     try {
-        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %j :: handlingTypes: %j', logKey, tenant, company, resourceId, handlingTypes);
+        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %j :: handlingType: %j', logKey, tenant, company, resourceId, handlingType);
 
         resourceService.GetResourceTaskDetails(logKey, tenant, company, resourceId).then(function (resourceTaskResult) {
 
             if (resourceTaskResult.IsSuccess && resourceTaskResult.Result) {
 
-                var asyncTasks = [];
                 var resourceTaskData = resourceTaskResult.Result;
-                handlingTypes.forEach(function (handlingType) {
 
-                    asyncTasks.push(
-                        function (callback) {
 
-                            if (handlingType.Type) {
+                if (handlingType.Type) {
 
-                                var availableHandlingType = resourceTaskData.filter(function (resourceTask) {
-                                    return resourceTask.ResTask.ResTaskInfo.TaskType === handlingType.Type;
+                    var availableHandlingType = resourceTaskData.filter(function (resourceTask) {
+                        return resourceTask.ResTask.ResTaskInfo.TaskType === handlingType.Type;
+                    });
+
+                    if (availableHandlingType && availableHandlingType.length > 0) {
+
+                        var matchingTask = availableHandlingType[0];
+                        var taskData = {
+                            HandlingType: matchingTask.ResTask.ResTaskInfo.TaskType,
+                            EnableToProductivity: matchingTask.ResTask.AddToProductivity,
+                            NoOfSlots: matchingTask.Concurrency,
+                            RefInfo: handlingType.Contact ? handlingType.Contact : matchingTask.RefInfo,
+                            AttributeData: []
+                        };
+
+                        resourceService.GetResourceAttributeDetails(logKey, tenant, company, matchingTask.ResTaskId).then(function (attributeData) {
+
+                            if (attributeData.IsSuccess && attributeData.Result) {
+
+                                var resourceAttributeData = attributeData.Result.ResResourceAttributeTask;
+                                resourceAttributeData.forEach(function (resourceAttribute) {
+
+                                    if (resourceAttribute && resourceAttribute.Percentage && resourceAttribute.Percentage > 0) {
+                                        var attribute = {
+                                            Attribute: resourceAttribute.AttributeId.toString(),
+                                            HandlingType: handlingType.Type,
+                                            Percentage: resourceAttribute.Percentage
+                                        };
+
+                                        taskData.AttributeData.push(attribute);
+                                    }
+
                                 });
 
-                                if (availableHandlingType && availableHandlingType.length > 0) {
-
-                                    var matchingTask = availableHandlingType[0];
-                                    var taskData = {
-                                        HandlingType: matchingTask.ResTask.ResTaskInfo.TaskType,
-                                        EnableToProductivity: matchingTask.ResTask.AddToProductivity,
-                                        NoOfSlots: matchingTask.Concurrency,
-                                        RefInfo: handlingType.Contact ? handlingType.Contact : matchingTask.RefInfo,
-                                        AttributeData: []
-                                    };
-
-                                    resourceService.GetResourceAttributeDetails(logKey, tenant, company, matchingTask.ResTaskId).then(function (attributeData) {
-
-                                        if (attributeData.IsSuccess && attributeData.Result) {
-
-                                            var resourceAttributeData = attributeData.Result.ResResourceAttributeTask;
-                                            resourceAttributeData.forEach(function (resourceAttribute) {
-
-                                                if (resourceAttribute && resourceAttribute.Percentage && resourceAttribute.Percentage > 0) {
-                                                    var attribute = {
-                                                        Attribute: resourceAttribute.AttributeId.toString(),
-                                                        HandlingType: handlingType.Type,
-                                                        Percentage: resourceAttribute.Percentage
-                                                    };
-
-                                                    taskData.AttributeData.push(attribute);
-                                                }
-
-                                            });
-
-                                            callback(null, taskData);
-
-                                        } else {
-
-                                            logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - GetResourceAttributeDetails failed :: %s', logKey, attributeData.CustomMessage);
-                                            callback(null, taskData);
-                                        }
-
-                                    }).catch(function () {
-
-                                        logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - GetResourceAttributeDetails failed', logKey);
-                                        callback(null, taskData);
-                                    });
-
-                                } else {
-
-                                    logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - Assigned task not found :: %s', logKey, handlingType.Type);
-                                    callback(new Error('Assigned task not found'), null);
-                                }
+                                deferred.resolve(taskData);
 
                             } else {
 
-                                logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - Invalid handling type', logKey);
-                                callback(new Error('Invalid handling type'), null);
+                                logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - GetResourceAttributeDetails failed :: %s', logKey, attributeData.CustomMessage);
+                                deferred.resolve(taskData);
                             }
 
-                        }
-                    );
+                        }).catch(function () {
 
-                });
-
-                if (asyncTasks.length > 0) {
-                    async.parallel(async.reflectAll(asyncTasks), function (err, results) {
-                        logger.info('LogKey: %s - ResourceHandler - PreProcessResourceData :: Success', logKey);
-
-                        var preProcessData = [];
-                        results.forEach(function (result) {
-                            if (result)
-                                preProcessData.push(result.value);
+                            logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - GetResourceAttributeDetails failed', logKey);
+                            deferred.resolve(taskData);
                         });
 
-                        deferred.resolve(preProcessData);
+                    } else {
 
-                    });
+                        logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - Assigned task not found :: %s', logKey, handlingType.Type);
+                        deferred.reject('No assigned task found');
+                    }
+
                 } else {
 
-                    deferred.reject('No valid task found');
+                    logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - Invalid handling type', logKey);
+                    deferred.reject('Invalid handling type');
                 }
+
+                //if (asyncTasks.length > 0) {
+                //    async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+                //        logger.info('LogKey: %s - ResourceHandler - PreProcessResourceData :: Success', logKey);
+                //
+                //        var preProcessData = [];
+                //        results.forEach(function (result) {
+                //            if (result)
+                //                preProcessData.push(result.value);
+                //        });
+                //
+                //        deferred.resolve(preProcessData);
+                //
+                //    });
+                //} else {
+                //
+                //    deferred.reject('No valid task found');
+                //}
 
             } else {
 
@@ -123,23 +115,23 @@ var preProcessResourceData = function (logKey, tenant, company, resourceId, hand
         }).catch(function (ex) {
 
             logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData - GetResourceTaskDetails failed', logKey);
-            deferred.reject(ex.message);
+            deferred.reject(ex);
         });
 
     } catch (ex) {
 
         logger.error('LogKey: %s - ResourceHandler - PreProcessResourceData failed :: %s', logKey, ex);
-        deferred.reject(ex.message);
+        deferred.reject(ex);
     }
 
     return deferred.promise;
 };
 
-var setResourceLogin = function (logKey, tenant, company, resourceId, userName, handlingTypes) {
+var setResourceLogin = function (logKey, tenant, company, resourceId, userName, handlingType) {
     var deferred = q.defer();
 
     try {
-        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %s :: userName: %s :: handlingTypes: %j', logKey, tenant, company, resourceId, userName, handlingTypes);
+        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %s :: userName: %s :: handlingType: %j', logKey, tenant, company, resourceId, userName, handlingType);
 
         resourceService.GetResourceDetails(logKey, tenant, company, resourceId).then(function (resourceData) {
 
@@ -148,7 +140,7 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                 var date = new Date();
                 var resourceDataObj = resourceData.Result;
 
-                preProcessResourceData(logKey, tenant, company, resourceId, handlingTypes).then(function (preProcessData) {
+                preProcessResourceData(logKey, tenant, company, resourceId, handlingType).then(function (taskData) {
 
                     var resourceKey = util.format('Resource:%d:%d:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId);
                     var resourceVersionKey = util.format('Version:Resource:%d:%d:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId);
@@ -170,90 +162,154 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                     };
 
                     var resourceTags = [
-                        "company_" + resourceDataObj.CompanyId,
                         "tenant_" + resourceDataObj.TenantId,
+                        "company_" + resourceDataObj.CompanyId,
                         "class_" + resourceDataObj.ResClass,
                         "type_" + resourceDataObj.ResType,
                         "category_" + resourceDataObj.ResCategory,
-                        "resourceid_" + resourceDataObj.ResourceId,
-                        "objtype_Resource"
+                        "resourceId_" + resourceDataObj.ResourceId,
+                        "objType_Resource"
                     ];
 
 
                     var asyncTasks = [];
 
-                    preProcessData.forEach(function (taskData) {
+                    if (taskData) {
+                        //--------------------Set Attribute Data--------------------------
 
-                        if (taskData) {
-                            //--------------------Set Attribute Data--------------------------
+                        taskData.AttributeData.forEach(function (attribute) {
 
-                            taskData.AttributeData.forEach(function (attribute) {
-
-                                var availableAttributes = resourceObj.ResourceAttributeInfo.filter(function (resourceAttribute) {
-                                    return resourceAttribute.Attribute === attribute.Attribute && resourceAttribute.HandlingType === attribute.HandlingType;
-                                });
-
-                                if (availableAttributes.length === 0) {
-                                    resourceObj.ResourceAttributeInfo.push(attribute);
-                                    resourceTags.push('attribute_' + attribute.Attribute);
-                                }
-
+                            var availableAttributes = resourceObj.ResourceAttributeInfo.filter(function (resourceAttribute) {
+                                return resourceAttribute.Attribute === attribute.Attribute && resourceAttribute.HandlingType === attribute.HandlingType;
                             });
 
+                            if (availableAttributes.length === 0) {
+                                resourceObj.ResourceAttributeInfo.push(attribute);
+                                resourceTags.push(util.format('%s:attribute_%d', taskData.HandlingType, attribute.Attribute));
+                            }
 
-                            //--------------------Set Concurrency Data--------------------------
+                        });
 
-                            var concurrencyDataKey = util.format('ConcurrencyInfo:%d:%d:%s:%s', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType);
-                            var concurrencyVersionKey = util.format('Version:ConcurrencyInfo:%d:%d:%s:%s', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType);
 
-                            taskData.RefInfo.ResourceId = resourceData.Result.ResourceId.toString();
-                            taskData.RefInfo.ResourceName = resourceData.Result.ResourceName;
+                        //--------------------Set Concurrency Data--------------------------
 
-                            var concurrencyData = {
+                        var concurrencyDataKey = util.format('ConcurrencyInfo:%d:%d:%s:%s', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType);
+                        var concurrencyVersionKey = util.format('Version:ConcurrencyInfo:%d:%d:%s:%s', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType);
+
+                        taskData.RefInfo.ResourceId = resourceData.Result.ResourceId.toString();
+                        taskData.RefInfo.ResourceName = resourceData.Result.ResourceName;
+
+                        var concurrencyData = {
+                            Company: resourceDataObj.CompanyId,
+                            Tenant: resourceDataObj.TenantId,
+                            HandlingType: taskData.HandlingType,
+                            LastConnectedTime: "",
+                            LastRejectedSession: "",
+                            RejectCount: 0,
+                            MaxRejectCount: 10,
+                            IsRejectCountExceeded: false,
+                            ResourceId: resourceDataObj.ResourceId,
+                            UserName: userName,
+                            ObjKey: concurrencyDataKey,
+                            RefInfo: taskData.RefInfo
+                        };
+
+                        var concurrencyDataTags = [
+                            "tenant_" + resourceDataObj.TenantId,
+                            "company_" + resourceDataObj.CompanyId,
+                            "handlingType_" + taskData.HandlingType,
+                            "resourceId_" + resourceDataObj.ResourceId,
+                            "objType_ConcurrencyInfo"
+                        ];
+
+                        if (resourceObj.ConcurrencyInfo.indexOf(concurrencyDataKey) === -1)
+                            resourceObj.ConcurrencyInfo.push(concurrencyDataKey);
+                        if (resourceObj.LoginTasks.indexOf(taskData.HandlingType) === -1)
+                            resourceObj.LoginTasks.push(taskData.HandlingType);
+
+                        asyncTasks.push(
+                            function (callback) {
+
+                                redisHandler.R_Set(logKey, concurrencyVersionKey, '0').then(function (versionResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set concurrency version success :: %s', logKey, versionResult);
+                                    return redisHandler.R_Set(logKey, concurrencyDataKey, JSON.stringify(concurrencyData));
+
+                                }).then(function (concurrencyDataResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set concurrency data success :: %s', logKey, concurrencyDataResult);
+                                    return tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', concurrencyDataTags, concurrencyDataKey);
+
+                                }).then(function (concurrencyTagResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set concurrency tags success :: %s', logKey, concurrencyTagResult);
+                                    callback(null, 'Set concurrency data success');
+
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+
+                            }
+                        );
+
+
+                        //--------------------Set Slot Data--------------------------
+
+                        for (var i = 0; i < taskData.NoOfSlots; i++) {
+
+                            var slotDataKey = util.format('CSlotInfo:%d:%d:%s:%s:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType, i);
+                            var slotVersionKey = util.format('Version:CSlotInfo:%d:%d:%s:%s:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType, i);
+
+                            var slotData = {
                                 Company: resourceDataObj.CompanyId,
                                 Tenant: resourceDataObj.TenantId,
                                 HandlingType: taskData.HandlingType,
-                                LastConnectedTime: "",
-                                LastRejectedSession: "",
-                                RejectCount: 0,
-                                MaxRejectCount: 10,
-                                IsRejectCountExceeded: false,
+                                State: "Available",
+                                StateChangeTime: date.toISOString(),
+                                HandlingRequest: "",
+                                LastReservedTime: "",
+                                MaxReservedTime: 10,
+                                MaxAfterWorkTime: 0,
+                                MaxFreezeTime: 0,
+                                FreezeAfterWorkTime: false,
+                                TempMaxRejectCount: 10,
                                 ResourceId: resourceDataObj.ResourceId,
-                                UserName: userName,
-                                ObjKey: concurrencyDataKey,
-                                RefInfo: taskData.RefInfo
+                                SlotId: i,
+                                ObjKey: slotDataKey,
+                                OtherInfo: "",
+                                EnableToProductivity: taskData.EnableToProductivity
                             };
 
-                            var concurrencyDataTags = [
+                            var slotDataTags = [
                                 "tenant_" + resourceDataObj.TenantId,
                                 "company_" + resourceDataObj.CompanyId,
                                 "handlingType_" + taskData.HandlingType,
+                                "state_Available",
                                 "resourceId_" + resourceDataObj.ResourceId,
-                                "objType_ConcurrencyInfo"
+                                "slotId_" + i,
+                                "objType_CSlotInfo"
                             ];
 
-                            if (resourceObj.ConcurrencyInfo.indexOf(concurrencyDataKey) === -1)
-                                resourceObj.ConcurrencyInfo.push(concurrencyDataKey);
-                            if (resourceObj.LoginTasks.indexOf(taskData.HandlingType) === -1)
-                                resourceObj.LoginTasks.push(taskData.HandlingType);
+                            if (resourceObj.ConcurrencyInfo.indexOf(slotDataKey) === -1)
+                                resourceObj.ConcurrencyInfo.push(slotDataKey);
 
                             asyncTasks.push(
                                 function (callback) {
 
-                                    redisHandler.R_Set(logKey, concurrencyVersionKey, '0').then(function (versionResult) {
+                                    redisHandler.R_Set(logKey, slotVersionKey, '0').then(function (versionResult) {
 
-                                        logger.info('LogKey: %s - ResourceHandler - Set concurrency version success :: %s', logKey, versionResult);
-                                        return redisHandler.R_Set(logKey, concurrencyDataKey, JSON.stringify(concurrencyData));
+                                        logger.info('LogKey: %s - ResourceHandler - Set slot version success :: %s', logKey, versionResult);
+                                        return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotData));
 
-                                    }).then(function (concurrencyDataResult) {
+                                    }).then(function (slotDataResult) {
 
-                                        logger.info('LogKey: %s - ResourceHandler - Set concurrency data success :: %s', logKey, concurrencyDataResult);
-                                        return tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', concurrencyDataTags, concurrencyDataKey);
+                                        logger.info('LogKey: %s - ResourceHandler - Set slot data success :: %s', logKey, slotDataResult);
+                                        return tagHandler.SetTags(logKey, 'Tag:SlotInfo', slotDataTags, slotDataKey);
 
-                                    }).then(function (concurrencyTagResult) {
+                                    }).then(function (slotTagResult) {
 
-                                        logger.info('LogKey: %s - ResourceHandler - Set concurrency tags success :: %s', logKey, concurrencyTagResult);
-                                        callback(null, 'Set concurrency data success');
+                                        logger.info('LogKey: %s - ResourceHandler - Set slot tags success :: %s', logKey, slotTagResult);
+                                        callback(null, 'Set slot data success');
 
                                     }).catch(function (ex) {
                                         callback(ex, null);
@@ -262,141 +318,75 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                                 }
                             );
 
-
-                            //--------------------Set Slot Data--------------------------
-
-                            for (var i = 0; i < taskData.NoOfSlots; i++) {
-
-                                var slotDataKey = util.format('CSlotInfo:%d:%d:%s:%s:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType, i);
-                                var slotVersionKey = util.format('Version:CSlotInfo:%d:%d:%s:%s:%d', resourceDataObj.TenantId, resourceDataObj.CompanyId, resourceDataObj.ResourceId, taskData.HandlingType, i);
-
-                                var slotData = {
-                                    Company: resourceDataObj.CompanyId,
-                                    Tenant: resourceDataObj.TenantId,
-                                    HandlingType: taskData.HandlingType,
-                                    State: "Available",
-                                    StateChangeTime: date.toISOString(),
-                                    HandlingRequest: "",
-                                    LastReservedTime: "",
-                                    MaxReservedTime: 10,
-                                    MaxAfterWorkTime: 0,
-                                    MaxFreezeTime: 0,
-                                    FreezeAfterWorkTime: false,
-                                    TempMaxRejectCount: 10,
-                                    ResourceId: resourceDataObj.ResourceId,
-                                    SlotId: i,
-                                    ObjKey: slotDataKey,
-                                    OtherInfo: "",
-                                    EnableToProductivity: taskData.EnableToProductivity
-                                };
-
-                                var slotDataTags = [
-                                    "tenant_" + resourceDataObj.TenantId,
-                                    "company_" + resourceDataObj.CompanyId,
-                                    "handlingType_" + taskData.HandlingType,
-                                    "state_Available",
-                                    "resourceId_" + resourceDataObj.ResourceId,
-                                    "slotId_" + i,
-                                    "objType_CSlotInfo"
-                                ];
-
-                                if (resourceObj.ConcurrencyInfo.indexOf(slotDataKey) === -1)
-                                    resourceObj.ConcurrencyInfo.push(slotDataKey);
-
-                                asyncTasks.push(
-                                    function (callback) {
-
-                                        redisHandler.R_Set(logKey, slotVersionKey, '0').then(function (versionResult) {
-
-                                            logger.info('LogKey: %s - ResourceHandler - Set slot version success :: %s', logKey, versionResult);
-                                            return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotData));
-
-                                        }).then(function (slotDataResult) {
-
-                                            logger.info('LogKey: %s - ResourceHandler - Set slot data success :: %s', logKey, slotDataResult);
-                                            return tagHandler.SetTags(logKey, 'Tag:SlotInfo', slotDataTags, slotDataKey);
-
-                                        }).then(function (slotTagResult) {
-
-                                            logger.info('LogKey: %s - ResourceHandler - Set slot tags success :: %s', logKey, slotTagResult);
-                                            callback(null, 'Set slot data success');
-
-                                        }).catch(function (ex) {
-                                            callback(ex, null);
-                                        });
-
-                                    }
-                                );
-
-                            }
-
-                        } else {
-
-                            logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - cannot proceed empty task data', logKey);
                         }
 
-                    });
 
-                    async.parallel(asyncTasks, function (err) {
-                        if (err) {
+                        async.parallel(asyncTasks, function (err) {
+                            if (err) {
 
-                            logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - set concurrency data failed :: %s', logKey, err);
-                            deferred.reject('Resource Login failed :: Set concurrency data');
+                                logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - set concurrency data failed :: %s', logKey, err);
+                                deferred.reject('Resource Login failed :: Set concurrency data');
 
-                        } else {
+                            } else {
 
-                            redisHandler.R_Set(logKey, resourceVersionKey, '0').then(function (versionResult) {
+                                redisHandler.R_Set(logKey, resourceVersionKey, '0').then(function (versionResult) {
 
-                                logger.info('LogKey: %s - ResourceHandler - Set resource version success :: %s', logKey, versionResult);
-                                return redisHandler.R_Set(logKey, resourceKey, JSON.stringify(resourceObj));
+                                    logger.info('LogKey: %s - ResourceHandler - Set resource version success :: %s', logKey, versionResult);
+                                    return redisHandler.R_Set(logKey, resourceKey, JSON.stringify(resourceObj));
 
-                            }).then(function (resourceDataResult) {
+                                }).then(function (resourceDataResult) {
 
-                                logger.info('LogKey: %s - ResourceHandler - Set resource data success :: %s', logKey, resourceDataResult);
-                                return tagHandler.SetTags(logKey, 'Tag:Resource', resourceTags, resourceKey);
+                                    logger.info('LogKey: %s - ResourceHandler - Set resource data success :: %s', logKey, resourceDataResult);
+                                    return tagHandler.SetTags(logKey, 'Tag:Resource', resourceTags, resourceKey);
 
-                            }).then(function (resourceTagResult) {
+                                }).then(function (resourceTagResult) {
 
-                                logger.info('LogKey: %s - ResourceHandler - Set resource tags success :: %s', logKey, resourceTagResult);
-                                logger.info('LogKey: %s - ResourceHandler - Set Resource login success :: %s', logKey, resourceKey);
+                                    logger.info('LogKey: %s - ResourceHandler - Set resource tags success :: %s', logKey, resourceTagResult);
+                                    logger.info('LogKey: %s - ResourceHandler - Set Resource login success :: %s', logKey, resourceKey);
 
-                                var postAsyncTasks = [
-                                    function (callback) {
-                                        redisHandler.R_SetNx(logKey, resourceIssMapKey, resourceKey).then(function (result) {
-                                            callback(null, result);
-                                        }).catch(function (ex) {
-                                            callback(ex, null);
-                                        });
-                                    },
-                                    function (callback) {
-                                        resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Register').then(function (result) {
-                                            if (resourceObj.ConcurrencyInfo && resourceObj.ConcurrencyInfo.length === 0) {
-                                                resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, "Available", "Offline").then(function (result) {
-                                                    callback(null, result);
-                                                }).catch(function (ex) {
-                                                    callback(ex, null);
-                                                });
-                                            }else{
+                                    var postAsyncTasks = [
+                                        function (callback) {
+                                            redisHandler.R_SetNx(logKey, resourceIssMapKey, resourceKey).then(function (result) {
                                                 callback(null, result);
-                                            }
-                                        }).catch(function (ex) {
-                                            callback(ex, null);
-                                        });
-                                    }
-                                ];
+                                            }).catch(function (ex) {
+                                                callback(ex, null);
+                                            });
+                                        },
+                                        function (callback) {
+                                            resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Register').then(function (result) {
+                                                //if (resourceObj.ConcurrencyInfo && resourceObj.ConcurrencyInfo.length === 0) {
+                                                    resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Offline').then(function (result) {
+                                                        callback(null, result);
+                                                    }).catch(function (ex) {
+                                                        callback(ex, null);
+                                                    });
+                                                //} else {
+                                                //    callback(null, result);
+                                                //}
+                                            }).catch(function (ex) {
+                                                callback(ex, null);
+                                            });
+                                        }
+                                    ];
 
-                                async.parallel(async.reflectAll(postAsyncTasks), function () {
-                                    logger.info('LogKey: %s - ResourceHandler - AddResourceStatusDurationInfo :: Success', logKey);
+                                    async.parallel(async.reflectAll(postAsyncTasks), function () {
+                                        logger.info('LogKey: %s - ResourceHandler - AddResourceStatusDurationInfo :: Success', logKey);
+                                    });
+
+                                    deferred.resolve('Resource login success');
+
+                                }).catch(function (ex) {
+                                    logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - set resource data failed :: %s', logKey, ex);
+                                    deferred.reject('Resource Login failed :: Set resource data');
                                 });
+                            }
+                        });
 
-                                deferred.resolve('Resource login success');
+                    } else {
 
-                            }).catch(function (ex) {
-                                logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - set resource data failed :: %s', logKey, ex);
-                                deferred.reject('Resource Login failed :: Set resource data');
-                            });
-                        }
-                    });
+                        logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - cannot proceed empty task data', logKey);
+                        deferred.reject('Resource Login failed :: Cannot proceed empty task data');
+                    }
 
                 }).catch(function () {
 
@@ -413,13 +403,13 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
         }).catch(function (ex) {
 
             logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - GetResourceDetails failed', logKey);
-            deferred.reject(ex.message);
+            deferred.reject(ex);
         });
 
     } catch (ex) {
 
         logger.error('LogKey: %s - ResourceHandler - SetResourceLogin failed :: %s', logKey, ex);
-        deferred.reject(ex.message);
+        deferred.reject(ex);
     }
 
     return deferred.promise;
@@ -428,20 +418,20 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
 var removeResource = function (logKey, tenant, company, resourceId) {
     var deferred = q.defer();
 
-    try{
+    try {
         logger.info('LogKey: %s - ResourceHandler - RemoveResource :: tenant: %d :: company: %d :: resourceId: %s', logKey, tenant, company, resourceId);
 
         var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
         var resourceVersionKey = util.format('Version:Resource:%d:%d:%d', tenant, company, resourceId);
-        
+
         redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
 
-            if(resourceData){
+            if (resourceData) {
 
                 var resourceObj = JSON.parse(resourceData);
 
                 var asyncTasks = [];
-                
+
                 resourceObj.ConcurrencyInfo.forEach(function (concurrencyKey) {
 
                     var concurrencyVersionKey = util.format('Version:%s', concurrencyKey);
@@ -470,17 +460,17 @@ var removeResource = function (logKey, tenant, company, resourceId) {
                                 callback(ex, null);
                             });
 
-                        }  
+                        }
                     );
                 });
 
                 async.parallel(asyncTasks, function (err) {
 
-                    if(err){
+                    if (err) {
 
                         logger.error('LogKey: %s - ResourceHandler - RemoveResource failed :: %s', logKey, err);
                         deferred.reject(err);
-                    }else{
+                    } else {
 
                         tagHandler.RemoveTags(logKey, resourceKey).then(function (result) {
 
@@ -495,6 +485,29 @@ var removeResource = function (logKey, tenant, company, resourceId) {
                         }).then(function (result) {
 
                             logger.info('LogKey: %s - ResourceHandler - RemoveResource - Remove %s process :: %s', logKey, resourceKey, result);
+
+                            var postAsyncTasks = [
+                                function (callback) {
+                                    var pubAdditionalParams = util.format('resourceName=%s&statusType=%s', resourceObj.ResourceName, 'removeResource');
+                                    ardsMonitoringService.SendResourceStatus(logKey, tenant, company, resourceId, pubAdditionalParams).then(function (result) {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                },
+                                function (callback) {
+                                    resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, resourceObj.UserName, "NotAvailable", "UnRegister").then(function (result) {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                }
+                            ];
+
+                            async.parallel(async.reflectAll(postAsyncTasks), function () {
+                                logger.info('LogKey: %s - ResourceHandler - RemoveResource - AddResourceStatusChangeInfo :: Success', logKey);
+                            });
+
                             deferred.resolve(result);
 
                         }).catch(function (ex) {
@@ -507,42 +520,42 @@ var removeResource = function (logKey, tenant, company, resourceId) {
 
                 });
 
-            }else{
+            } else {
 
                 logger.error('LogKey: %s - ResourceHandler - RemoveResource - No logged in resource data found', logKey);
-                deferred.reject(ex.message);
+                deferred.reject(ex);
             }
-            
+
         }).catch(function (ex) {
 
             logger.error('LogKey: %s - ResourceHandler - RemoveResource - R_Get failed', logKey);
-            deferred.reject(ex.message);
+            deferred.reject(ex);
         })
 
-    }catch(ex){
+    } catch (ex) {
 
         logger.error('LogKey: %s - ResourceHandler - RemoveResource failed :: %s', logKey, ex);
-        deferred.reject(ex.message);
+        deferred.reject(ex);
     }
 
     return deferred.promise;
 };
 
-var addResource = function (logKey, tenant, company, resourceId, username, handlingTypes) {
+var addResource = function (logKey, tenant, company, resourceId, username, handlingType) {
     var deferred = q.defer();
 
-    try{
+    try {
         logger.info('LogKey: %s - ResourceHandler - AddResource :: tenant: %d :: company: %d :: resourceId: %s', logKey, tenant, company, resourceId);
 
         var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
         redisHandler.R_Exists(logKey, resourceKey).then(function (result) {
 
-            if(result === 1){
+            if (result === 1) {
 
                 removeResource(logKey, tenant, company, resourceId).then(function (result) {
 
                     logger.info('LogKey: %s - ResourceHandler - AddResource - Remove existing resource success :: %s', logKey, result);
-                    setResourceLogin(logKey, tenant, company, resourceId, username, handlingTypes).then(function (result) {
+                    setResourceLogin(logKey, tenant, company, resourceId, username, handlingType).then(function (result) {
 
                         logger.info('LogKey: %s - ResourceHandler - AddResource - Set resource login success :: %s', logKey, result);
                         deferred.resolve('Set resource login success');
@@ -559,9 +572,9 @@ var addResource = function (logKey, tenant, company, resourceId, username, handl
                     deferred.reject('Remove existing resource failed');
                 });
 
-            }else{
+            } else {
 
-                setResourceLogin(logKey, tenant, company, resourceId, username, handlingTypes).then(function (result) {
+                setResourceLogin(logKey, tenant, company, resourceId, username, handlingType).then(function (result) {
 
                     logger.info('LogKey: %s - ResourceHandler - AddResource - Set resource login success :: %s', logKey, result);
                     deferred.resolve('Set resource login success');
@@ -579,8 +592,389 @@ var addResource = function (logKey, tenant, company, resourceId, username, handl
         })
 
 
-    }catch(ex){
+    } catch (ex) {
         logger.error('LogKey: %s - ResourceHandler - AddResource failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var editResource = function (logKey, tenant, company, handlingType, existingResource) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - EditResource :: tenant: %d :: company: %d :: handlingType: %j :: existingResource: %j', logKey, tenant, company, handlingType, existingResource);
+
+        preProcessResourceData(logKey, existingResource.Tenant, existingResource.Company, existingResource.ResourceId, handlingType).then(function (taskData) {
+
+            var asyncTasks = [];
+
+            var newResourceTags = [
+                "company_" + company,
+                "tenant_" + tenant
+            ];
+
+            if (taskData) {
+
+                var concurrencyDataKey = util.format('ConcurrencyInfo:%d:%d:%s:%s', existingResource.Tenant, existingResource.Company, existingResource.ResourceId, taskData.HandlingType);
+                var concurrencyVersionKey = util.format('Version:ConcurrencyInfo:%d:%d:%s:%s', existingResource.Tenant, existingResource.Company, existingResource.ResourceId, taskData.HandlingType);
+
+                if (existingResource.ConcurrencyInfo.indexOf(concurrencyDataKey) > -1) {
+                    asyncTasks.push(
+                        function (callback) {
+
+                            redisHandler.R_Get(logKey, concurrencyDataKey).then(function (concurrencyData) {
+
+                                if (concurrencyData) {
+
+                                    var internalAsyncTasks = [];
+                                    var concurrencyObj = JSON.parse(concurrencyData);
+
+                                    var newConcurrencyDataTags = [
+                                        "tenant_" + tenant,
+                                        "company_" + company
+                                    ];
+
+                                    if (concurrencyObj.IsRejectCountExceeded) {
+
+                                        concurrencyObj.IsRejectCountExceeded = false;
+                                        concurrencyObj.RejectCount = 0;
+
+                                        internalAsyncTasks.push(
+                                            function (internalCallback) {
+
+                                                redisHandler.R_Set(logKey, concurrencyDataKey, JSON.stringify(concurrencyObj)).then(function (concurrencyDataResult) {
+
+                                                    logger.info('LogKey: %s - ResourceHandler - Edit concurrency data success :: %s', logKey, concurrencyDataResult);
+                                                    internalCallback(null, concurrencyDataResult);
+                                                }).catch(function (ex) {
+
+                                                    logger.error('LogKey: %s - ResourceHandler - Edit concurrency data failed :: %s', logKey, ex);
+                                                    internalCallback(ex, null);
+                                                });
+
+                                            }
+                                        );
+
+                                    }
+
+                                    internalAsyncTasks.push(
+                                        function (internalCallback) {
+
+                                            tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', newConcurrencyDataTags, concurrencyDataKey).then(function (concurrencyTagResult) {
+
+                                                logger.info('LogKey: %s - ResourceHandler - Set concurrency tags success :: %s', logKey, concurrencyTagResult);
+                                                internalCallback(null, 'Set concurrency tags success');
+                                            }).catch(function (ex) {
+
+                                                logger.error('LogKey: %s - ResourceHandler - Edit concurrency tags failed :: %s', logKey, ex);
+                                                internalCallback(ex, null);
+                                            });
+
+                                        }
+                                    );
+
+                                    for (var i = 0; i < taskData.NoOfSlots; i++) {
+
+                                        var slotDataKey = util.format('CSlotInfo:%d:%d:%s:%s:%d', existingResource.Tenant, existingResource.Company, existingResource.ResourceId, taskData.HandlingType, i);
+
+                                        var newSlotDataTags = [
+                                            "tenant_" + tenant,
+                                            "company_" + company
+                                        ];
+
+                                        internalAsyncTasks.push(
+                                            function (internalCallback) {
+
+                                                tagHandler.SetTags(logKey, 'Tag:SlotInfo', newSlotDataTags, slotDataKey).then(function (slotTagResult) {
+
+                                                    logger.info('LogKey: %s - ResourceHandler - Set slot tags success :: %s', logKey, slotTagResult);
+                                                    internalCallback(null, 'Set slot tags success');
+                                                }).catch(function (ex) {
+
+                                                    logger.error('LogKey: %s - ResourceHandler - Edit slot tags failed :: %s', logKey, ex);
+                                                    internalCallback(ex, null);
+                                                });
+
+                                            }
+                                        );
+
+                                    }
+
+                                    async.parallel(internalAsyncTasks, function (err, results) {
+
+                                        if (err) {
+                                            callback(err, null);
+                                        } else {
+                                            callback(null, results);
+                                        }
+
+                                    });
+
+
+                                } else {
+
+                                    logger.error('LogKey: %s - ResourceHandler - EditResource - R_Get concurrency: %s :: No data found', logKey, concurrencyDataKey);
+                                    callback(new Error('No concurrency data found on redis'), null);
+                                }
+
+                            }).catch(function (ex) {
+
+                                logger.error('LogKey: %s - ResourceHandler - EditResource - R_Get concurrency: %s data failed :: %s', logKey, concurrencyDataKey, ex);
+                                callback(ex, null);
+                            });
+
+                        }
+                    );
+
+                } else {
+
+                    //--------------------Add New Concurrency Data--------------------------
+                    var date = new Date();
+
+                    taskData.AttributeData.forEach(function (attribute) {
+
+                        var availableAttributes = existingResource.ResourceAttributeInfo.filter(function (resourceAttribute) {
+                            return resourceAttribute.Attribute === attribute.Attribute && resourceAttribute.HandlingType === attribute.HandlingType;
+                        });
+
+                        if (availableAttributes.length === 0) {
+                            existingResource.ResourceAttributeInfo.push(attribute);
+                            newResourceTags.push(util.format('%s:attribute_%d', taskData.HandlingType, attribute.Attribute));
+                        }
+
+                    });
+
+                    taskData.RefInfo.ResourceId = existingResource.ResourceId.toString();
+                    taskData.RefInfo.ResourceName = existingResource.ResourceName;
+
+                    var concurrencyData = {
+                        Company: existingResource.Company,
+                        Tenant: existingResource.Tenant,
+                        HandlingType: taskData.HandlingType,
+                        LastConnectedTime: "",
+                        LastRejectedSession: "",
+                        RejectCount: 0,
+                        MaxRejectCount: 10,
+                        IsRejectCountExceeded: false,
+                        ResourceId: existingResource.ResourceId,
+                        UserName: existingResource.UserName,
+                        ObjKey: concurrencyDataKey,
+                        RefInfo: taskData.RefInfo
+                    };
+
+                    var concurrencyDataTags = [
+                        "tenant_" + tenant,
+                        "company_" + company,
+                        "handlingType_" + taskData.HandlingType,
+                        "resourceId_" + existingResource.ResourceId,
+                        "objType_ConcurrencyInfo"
+                    ];
+
+                    if (existingResource.ConcurrencyInfo.indexOf(concurrencyDataKey) === -1)
+                        existingResource.ConcurrencyInfo.push(concurrencyDataKey);
+                    if (existingResource.LoginTasks.indexOf(taskData.HandlingType) === -1)
+                        existingResource.LoginTasks.push(taskData.HandlingType);
+
+                    asyncTasks.push(
+                        function (callback) {
+
+                            redisHandler.R_Set(logKey, concurrencyVersionKey, '0').then(function (versionResult) {
+
+                                logger.info('LogKey: %s - ResourceHandler - Set concurrency version success :: %s', logKey, versionResult);
+                                return redisHandler.R_Set(logKey, concurrencyDataKey, JSON.stringify(concurrencyData));
+
+                            }).then(function (concurrencyDataResult) {
+
+                                logger.info('LogKey: %s - ResourceHandler - Set concurrency data success :: %s', logKey, concurrencyDataResult);
+                                return tagHandler.SetTags(logKey, 'Tag:ConcurrencyInfo', concurrencyDataTags, concurrencyDataKey);
+
+                            }).then(function (concurrencyTagResult) {
+
+                                logger.info('LogKey: %s - ResourceHandler - Set concurrency tags success :: %s', logKey, concurrencyTagResult);
+                                callback(null, 'Set concurrency data success');
+
+                            }).catch(function (ex) {
+                                callback(ex, null);
+                            });
+
+                        }
+                    );
+
+
+                    //--------------------Set Slot Data--------------------------
+
+                    for (var i = 0; i < taskData.NoOfSlots; i++) {
+
+                        var slotDataKey = util.format('CSlotInfo:%d:%d:%s:%s:%d', existingResource.Tenant, existingResource.Company, existingResource.ResourceId, taskData.HandlingType, i);
+                        var slotVersionKey = util.format('Version:CSlotInfo:%d:%d:%s:%s:%d', existingResource.Tenant, existingResource.Company, existingResource.ResourceId, taskData.HandlingType, i);
+
+                        var slotData = {
+                            Company: existingResource.Company,
+                            Tenant: existingResource.Tenant,
+                            HandlingType: taskData.HandlingType,
+                            State: "Available",
+                            StateChangeTime: date.toISOString(),
+                            HandlingRequest: "",
+                            LastReservedTime: "",
+                            MaxReservedTime: 10,
+                            MaxAfterWorkTime: 0,
+                            MaxFreezeTime: 0,
+                            FreezeAfterWorkTime: false,
+                            TempMaxRejectCount: 10,
+                            ResourceId: existingResource.ResourceId,
+                            SlotId: i,
+                            ObjKey: slotDataKey,
+                            OtherInfo: "",
+                            EnableToProductivity: taskData.EnableToProductivity
+                        };
+
+                        var slotDataTags = [
+                            "tenant_" + tenant,
+                            "company_" + company,
+                            "handlingType_" + taskData.HandlingType,
+                            "state_Available",
+                            "resourceId_" + existingResource.ResourceId,
+                            "slotId_" + i,
+                            "objType_CSlotInfo"
+                        ];
+
+                        if (existingResource.ConcurrencyInfo.indexOf(slotDataKey) === -1)
+                            existingResource.ConcurrencyInfo.push(slotDataKey);
+
+                        asyncTasks.push(
+                            function (callback) {
+
+                                redisHandler.R_Set(logKey, slotVersionKey, '0').then(function (versionResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set slot version success :: %s', logKey, versionResult);
+                                    return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotData));
+
+                                }).then(function (slotDataResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set slot data success :: %s', logKey, slotDataResult);
+                                    return tagHandler.SetTags(logKey, 'Tag:SlotInfo', slotDataTags, slotDataKey);
+
+                                }).then(function (slotTagResult) {
+
+                                    logger.info('LogKey: %s - ResourceHandler - Set slot tags success :: %s', logKey, slotTagResult);
+                                    callback(null, 'Set slot data success');
+
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+
+                            }
+                        );
+
+                    }
+
+                }
+
+                async.parallel(asyncTasks, function (err, results) {
+
+                    if (err) {
+
+                        logger.error('LogKey: %s - ResourceHandler - EditResource - Error occurred in edit resource', logKey);
+                        deferred.reject('Error occurred in edit resource');
+                    } else {
+
+                        var resourceKey = util.format('Resource:%d:%d:%d', existingResource.Tenant, existingResource.Company, existingResource.ResourceId);
+
+                        redisHandler.R_Set(logKey, resourceKey, JSON.stringify(existingResource)).then(function (resourceDataResult) {
+
+                            logger.info('LogKey: %s - ResourceHandler - Set resource data success :: %s', logKey, resourceDataResult);
+                            return tagHandler.SetTags(logKey, 'Tag:Resource', newResourceTags, resourceKey);
+
+                        }).then(function (resourceTagResult) {
+
+                            logger.info('LogKey: %s - ResourceHandler - Set resource tags success :: %s', logKey, resourceTagResult);
+                            logger.info('LogKey: %s - ResourceHandler - Edit Resource success :: %s', logKey, resourceKey);
+
+                            ardsMonitoringService.SendResourceStatus(logKey, tenant, company, existingResource.ResourceId, null);
+
+                            deferred.resolve('Edit resource success');
+
+                        }).catch(function (ex) {
+                            logger.error('LogKey: %s - ResourceHandler - EditResource - set resource data failed :: %s', logKey, ex);
+                            deferred.reject('Edit resource failed :: Edit resource data');
+                        });
+
+                    }
+
+                });
+
+
+            } else {
+
+                logger.error('LogKey: %s - ResourceHandler - EditResource - cannot proceed empty task data', logKey);
+                deferred.reject('Cannot proceed empty task data');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - EditResource - PreProcessResourceData failed:: %s', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - EditResource failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var shareResource = function (logKey, tenant, company, resourceId, userName, handlingType) {
+    var deferred = q.defer();
+
+    try{
+
+        var resourceSearchTags = [
+            'Tag:Resource:resourceId_'+resourceId,
+            'Tag:Resource:objType_Resource'
+        ];
+
+        redisHandler.R_SInter(logKey, resourceSearchTags).then(function (resourceKeys) {
+
+            if(resourceKeys && resourceKeys.length > 0){
+
+                var resourceKey = resourceKeys[0];
+                redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
+
+                    if(resourceData){
+
+                        var resourceObj = JSON.parse(resourceData);
+                        return editResource(logKey, tenant, company, handlingType, resourceObj);
+
+                    }else{
+
+                        logger.error('LogKey: %s - ResourceHandler - ShareResource - R_Get Resource :: %s failed:: No resource data found', logKey, resourceKey);
+                        deferred.reject('Get resource data failed');
+                    }
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - ShareResource - R_Get Resource :: %s failed:: %s', logKey, resourceKey, ex);
+                    deferred.reject('Get resource data failed');
+                });
+
+            }else{
+
+                return setResourceLogin(logKey, tenant, company, resourceId, userName, handlingType);
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - ShareResource - R_SInter Resource failed:: %s', logKey, ex);
+            deferred.reject(ex);
+        })
+
+    }catch(ex){
+
+        logger.error('LogKey: %s - ResourceHandler - ShareResource failed :: %s', logKey, ex);
         deferred.reject(ex);
     }
 
@@ -590,3 +984,4 @@ var addResource = function (logKey, tenant, company, resourceId, username, handl
 
 module.exports.RemoveResource = removeResource;
 module.exports.AddResource = addResource;
+module.exports.ShareResource = shareResource;

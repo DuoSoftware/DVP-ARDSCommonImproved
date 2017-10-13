@@ -99,7 +99,7 @@ var processState = function (logKey, tenant, company, stateKey, resourceId, reso
                         deferred.resolve(statusObj);
                     }
 
-                } else if ((reason === "Outbound" || reason === "Inbound" || reason === "Offline") && r_StatusObj) {
+                } else if ((reason === "Outbound" || reason === "Inbound" || (reason === "Offline" && r_StatusObj.Mode != "Offline")) && r_StatusObj) {
 
                     statusObj.Mode = reason;
 
@@ -345,9 +345,11 @@ var setResourceState = function (logKey, tenant, company, resourceId, resourceNa
                         }).then(function (result) {
 
                             logger.info('LogKey: %s - ResourceStatusMapper - SetResourceState :: Success', logKey);
+                            deferred.resolve(result);
                         }).catch(function (ex) {
 
-                            logger.info('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed', logKey);
+                            logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed :: %s', logKey, ex);
+                            deferred.resolve('Set resource state failed');
                         });
 
                         if (reason && reason.toLowerCase() !== "endbreak" && reason.toLowerCase().indexOf('break') > -1) {
@@ -360,19 +362,21 @@ var setResourceState = function (logKey, tenant, company, resourceId, resourceNa
 
                     }).catch(function (ex) {
 
-                        deferred.reject(ex);
+                        logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed :: %s', logKey, ex);
+                        deferred.resolve('Set resource state failed');
                     });
                 });
             }else{
 
-                deferred.reject(result.message);
+                logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed :: %s', logKey, ex);
+                deferred.resolve(result.message);
             }
         });
 
     }catch(ex){
 
         logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState failed :: %s', logKey, ex);
-        deferred.reject(ex)
+        deferred.resolve('Set resource state failed');
     }
 
     return deferred.promise;
