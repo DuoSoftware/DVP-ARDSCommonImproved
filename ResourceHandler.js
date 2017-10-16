@@ -1239,8 +1239,72 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
     return deferred.promise;
 };
 
+var setResourceAttributes = function (logKey, tenant, company, resourceId, newAttribute) {
+    var deferred = q.defer();
+
+    try{
+
+        var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
+        redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
+
+            if(resourceData){
+
+                var resourceObj = JSON.parse(resourceData);
+
+                var attributeIndex = -1;
+                resourceObj.ResourceAttributeInfo.forEach(function (attribute, i) {
+                    if(attribute.Attribute === newAttribute.Attribute && attribute.HandlingType === newAttribute.HandlingType)
+                        attributeIndex = i;
+                });
+
+                var newAttributeTag = [];
+                if(attributeIndex > -1){
+
+                    resourceObj.ResourceAttributeInfo[attributeIndex] = newAttribute;
+                }else{
+
+                    resourceObj.ResourceAttributeInfo.push(newAttribute);
+                    newAttributeTag.push(util.format('%s:attribute_%d', newAttribute.HandlingType, newAttribute.Attribute))
+                }
+
+
+                redisHandler.R_Set(logKey, resourceKey, JSON.stringify(resourceObj)).then(function (result) {
+
+                    logger.info('LogKey: %s - ResourceHandler - Set resource attribute success :: %s', logKey, result);
+                    return tagHandler.SetTags(logKey, 'Tag:Resource', newAttributeTag, resourceKey);
+                }).then(function (resourceTagResult) {
+
+                    logger.info('LogKey: %s - ResourceHandler - Set resource tags success :: %s', logKey, resourceTagResult);
+                    deferred.resolve('Set resource attribute success');
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes - R_Set Resource : %s failed :: %s', logKey, resourceKey, ex);
+                    deferred.reject('Set Resource Attribute failed');
+                });
+
+            }else{
+
+                logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes - No logged in resource found', logKey);
+                deferred.reject('No logged in resource found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes - R_Get :: failed :: %s', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    }catch(ex){
+        logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
 
 module.exports.RemoveResource = removeResource;
 module.exports.AddResource = addResource;
 module.exports.ShareResource = shareResource;
 module.exports.RemoveShareResource = removeShareResource;
+module.exports.SetResourceAttributes = setResourceAttributes;
