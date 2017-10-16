@@ -1003,10 +1003,10 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
 
                         var resourceObj = JSON.parse(resourceData);
 
-                        preProcessResourceData(logKey, tenant, company, resourceId, handlingType).then(function (taskData) {
+                        preProcessResourceData(logKey, resourceObj.Tenant, resourceObj.Company, resourceId, handlingType).then(function (taskData) {
 
-                            var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
-                            var tagReferenceKey = util.format('TagReference:Resource:%d:%d:%d', tenant, company, resourceId);
+                            var resourceKey = util.format('Resource:%d:%d:%d', resourceObj.Tenant, resourceObj.Company, resourceId);
+                            var tagReferenceKey = util.format('TagReference:Resource:%d:%d:%d', resourceObj.Tenant, resourceObj.Company, resourceId);
                             redisHandler.R_SMembers(logKey, tagReferenceKey).then(function (tagReferenceData) {
 
                                 var resourceTenantTagCount = 0;
@@ -1120,8 +1120,8 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
 
                                     // Remove task sharing information
                                     var tagsToRemove = [];
-                                    var concurrencyKey = util.format('ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, taskData.HandlingType);
-                                    var concurrencyTagReference = util.format('TagReference:ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, taskData.HandlingType);
+                                    var concurrencyKey = util.format('ConcurrencyInfo:%d:%d:%d:%s', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType);
+                                    var concurrencyTagReference = util.format('TagReference:ConcurrencyInfo:%d:%d:%d:%s', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType);
 
                                     if (resourceTenantTagCount >= 2) {
 
@@ -1140,8 +1140,8 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
                                             }
                                         );
                                         for (var i = 0; i < taskData.NoOfSlots; i++) {
-                                            var slotKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
-                                            var slotTagReference = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+                                            var slotKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType, i);
+                                            var slotTagReference = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType, i);
 
                                             tagsToRemove.push(
                                                 {
@@ -1164,14 +1164,14 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
                                         );
                                         tagsToRemove.push(
                                             {
-                                                TagKey: util.format('Tag:Resource:company_%d', company),
+                                                TagKey: util.format('Tag:ConcurrencyInfo:company_%d', company),
                                                 TagValue: concurrencyKey,
                                                 TagReference: concurrencyTagReference
                                             }
                                         );
                                         for (var j = 0; j < taskData.NoOfSlots; j++) {
-                                            var slotKey2 = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
-                                            var slotTagReference2 = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+                                            var slotKey2 = util.format('CSlotInfo:%d:%d:%d:%s:%d', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType, j);
+                                            var slotTagReference2 = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', resourceObj.Tenant, resourceObj.Company, resourceId, taskData.HandlingType, j);
 
                                             tagsToRemove.push(
                                                 {

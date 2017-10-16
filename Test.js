@@ -18,8 +18,8 @@ var resourceHandler = require('./ResourceHandler');
 //    console.log(ex);
 //});
 
-//resourceHandler.ShareResource('test', 1, 103, 129, 'Rusiru', {
-//    "Type": "CHAT",
+//resourceHandler.ShareResource('test', 1, 104, 129, 'Rusiru', {
+//    "Type": "CALL",
 //    "Contact": {
 //        "ContactName": "9501",
 //        "Domain": "duo.media1.veery.cloud",
@@ -32,22 +32,22 @@ var resourceHandler = require('./ResourceHandler');
 //    console.log(ex);
 //});
 
-resourceHandler.RemoveShareResource('test', 1, 103, 129, {
-    "Type": "CHAT",
-    "Contact": {
-        "ContactName": "9501",
-        "Domain": "duo.media1.veery.cloud",
-        "Extention": "9501",
-        "ContactType": "PRIVATE"
-    }
-}).then(function (result) {
-    console.log(result);
-}).catch(function (ex) {
-    console.log(ex);
-});
-
-//resourceHandler.RemoveResource('test', 1, 103, 129).then(function (result) {
+//resourceHandler.RemoveShareResource('test', 1, 104, 129, {
+//    "Type": "CALL",
+//    "Contact": {
+//        "ContactName": "9501",
+//        "Domain": "duo.media1.veery.cloud",
+//        "Extention": "9501",
+//        "ContactType": "PRIVATE"
+//    }
+//}).then(function (result) {
 //    console.log(result);
 //}).catch(function (ex) {
 //    console.log(ex);
 //});
+
+resourceHandler.RemoveResource('test', 1, 103, 129).then(function (result) {
+    console.log(result);
+}).catch(function (ex) {
+    console.log(ex);
+});
