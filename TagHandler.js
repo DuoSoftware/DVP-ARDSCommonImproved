@@ -117,6 +117,55 @@ var removeTags = function (logKey, tagValue) {
     return deferred.promise;
 };
 
+var removeSpecificTags = function (logKey, tagsAndValues) {
+    var deferred = q.defer();
+    try{
+        logger.info('LogKey: %s - TagHandler - RemoveSpecificTags :: tagsAndValues: %j', logKey, tagsAndValues);
+
+        var pipeCommands = [];
+        tagsAndValues.forEach(function (tagData) {
+            pipeCommands.push([
+                'srem',
+                tagData.TagKey,
+                tagData.TagValue
+            ]);
+
+            pipeCommands.push([
+                'srem',
+                tagData.TagReference,
+                tagData.TagKey
+            ]);
+        });
+
+        if(pipeCommands.length >0){
+
+            redisHandler.R_Pipeline(logKey, pipeCommands).then(function () {
+
+                logger.info('LogKey: %s - TagHandler - RemoveSpecificTags :: pipe commands execution success', logKey);
+                deferred.resolve('Pipe commands execution success');
+
+            }).catch(function () {
+
+                logger.error('LogKey: %s - TagHandler - RemoveSpecificTags :: Pipe commands execution failed', logKey);
+                deferred.reject('Pipe commands execution failed');
+
+            });
+        }else{
+
+            logger.info('LogKey: %s - TagHandler - RemoveSpecificTags :: No pipe commands to proceed', logKey);
+            deferred.resolve('Tag execution finished');
+        }
+
+    }catch(ex){
+
+        logger.error('LogKey: %s - TagHandler - RemoveSpecificTags failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
 
 module.exports.SetTags = setTags;
 module.exports.RemoveTags = removeTags;
+module.exports.RemoveSpecificTags = removeSpecificTags;

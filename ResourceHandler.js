@@ -17,7 +17,7 @@ var preProcessResourceData = function (logKey, tenant, company, resourceId, hand
     var deferred = q.defer();
 
     try {
-        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %j :: handlingType: %j', logKey, tenant, company, resourceId, handlingType);
+        logger.info('LogKey: %s - ResourceHandler - SetResourceLogin :: tenant: %d :: company: %d :: resourceId: %s :: handlingType: %j', logKey, tenant, company, resourceId, handlingType);
 
         resourceService.GetResourceTaskDetails(logKey, tenant, company, resourceId).then(function (resourceTaskResult) {
 
@@ -355,11 +355,11 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                                         function (callback) {
                                             resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Register').then(function (result) {
                                                 //if (resourceObj.ConcurrencyInfo && resourceObj.ConcurrencyInfo.length === 0) {
-                                                    resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Offline').then(function (result) {
-                                                        callback(null, result);
-                                                    }).catch(function (ex) {
-                                                        callback(ex, null);
-                                                    });
+                                                resourceStatusMapper.SetResourceState(logKey, tenant, company, resourceId, userName, 'Available', 'Offline').then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
                                                 //} else {
                                                 //    callback(null, result);
                                                 //}
@@ -391,7 +391,7 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                 }).catch(function () {
 
                     logger.error('LogKey: %s - ResourceHandler - SetResourceLogin - preProcessResourceData failed', logKey);
-                    deferred.reject(resourceData.CustomMessage);
+                    deferred.reject('Pre-Process resource data failed');
                 });
 
             } else {
@@ -930,26 +930,26 @@ var editResource = function (logKey, tenant, company, handlingType, existingReso
 var shareResource = function (logKey, tenant, company, resourceId, userName, handlingType) {
     var deferred = q.defer();
 
-    try{
+    try {
 
         var resourceSearchTags = [
-            'Tag:Resource:resourceId_'+resourceId,
+            'Tag:Resource:resourceId_' + resourceId,
             'Tag:Resource:objType_Resource'
         ];
 
         redisHandler.R_SInter(logKey, resourceSearchTags).then(function (resourceKeys) {
 
-            if(resourceKeys && resourceKeys.length > 0){
+            if (resourceKeys && resourceKeys.length > 0) {
 
                 var resourceKey = resourceKeys[0];
                 redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
 
-                    if(resourceData){
+                    if (resourceData) {
 
                         var resourceObj = JSON.parse(resourceData);
                         return editResource(logKey, tenant, company, handlingType, resourceObj);
 
-                    }else{
+                    } else {
 
                         logger.error('LogKey: %s - ResourceHandler - ShareResource - R_Get Resource :: %s failed:: No resource data found', logKey, resourceKey);
                         deferred.reject('Get resource data failed');
@@ -961,7 +961,7 @@ var shareResource = function (logKey, tenant, company, resourceId, userName, han
                     deferred.reject('Get resource data failed');
                 });
 
-            }else{
+            } else {
 
                 return setResourceLogin(logKey, tenant, company, resourceId, userName, handlingType);
             }
@@ -970,11 +970,269 @@ var shareResource = function (logKey, tenant, company, resourceId, userName, han
 
             logger.error('LogKey: %s - ResourceHandler - ShareResource - R_SInter Resource failed:: %s', logKey, ex);
             deferred.reject(ex);
-        })
+        });
 
-    }catch(ex){
+    } catch (ex) {
 
         logger.error('LogKey: %s - ResourceHandler - ShareResource failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var removeShareResource = function (logKey, tenant, company, resourceId, handlingType) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - RemoveShareResource :: tenant: %d :: company: %d :: handlingType: %j :: resourceId: %s', logKey, tenant, company, handlingType, resourceId);
+
+        var resourceSearchTags = [
+            'Tag:Resource:resourceId_' + resourceId,
+            'Tag:Resource:objType_Resource'
+        ];
+
+        redisHandler.R_SInter(logKey, resourceSearchTags).then(function (resourceKeys) {
+
+            if (resourceKeys && resourceKeys.length > 0) {
+
+                var resourceKey = resourceKeys[0];
+                redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
+
+                    if (resourceData) {
+
+                        var resourceObj = JSON.parse(resourceData);
+
+                        preProcessResourceData(logKey, tenant, company, resourceId, handlingType).then(function (taskData) {
+
+                            var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
+                            var tagReferenceKey = util.format('TagReference:Resource:%d:%d:%d', tenant, company, resourceId);
+                            redisHandler.R_SMembers(logKey, tagReferenceKey).then(function (tagReferenceData) {
+
+                                var resourceTenantTagCount = 0;
+                                var resourceCompanyTagCount = 0;
+
+                                if (tagReferenceData) {
+
+                                    tagReferenceData.forEach(function (tagRefValue) {
+                                        if (tagRefValue.startsWith('Tag:Resource:tenant_'))
+                                            resourceTenantTagCount++;
+
+                                        if (tagRefValue.startsWith('Tag:Resource:company_'))
+                                            resourceCompanyTagCount++;
+                                    });
+                                }
+
+                                if (resourceTenantTagCount < 2 && resourceCompanyTagCount < 2) {
+
+                                    var asyncTasks = [];
+                                    var concurrencyRemoveIndexes = [];
+                                    var attributeRemoveIndexes = [];
+                                    var attributeRemoveTags = [];
+
+                                    var loginTaskRemoveIndex = resourceObj.LoginTasks.indexOf(taskData.HandlingType);
+
+                                    resourceObj.ConcurrencyInfo.forEach(function (concurrencyKey, i) {
+                                        if (concurrencyKey.indexOf(taskData.HandlingType) > -1) {
+
+                                            var concurrencyVersionKey = util.format('Version:%s', concurrencyKey);
+                                            concurrencyRemoveIndexes.push(i);
+
+                                            asyncTasks.push(
+                                                function (callback) {
+
+                                                    tagHandler.RemoveTags(logKey, concurrencyKey).then(function (result) {
+
+                                                        logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Remove %s tag process :: %s', logKey, concurrencyKey, result);
+                                                        return redisHandler.R_Del(logKey, concurrencyVersionKey);
+
+                                                    }).then(function (result) {
+
+                                                        logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Remove %s version process :: %s', logKey, concurrencyVersionKey, result);
+                                                        return redisHandler.R_Del(logKey, concurrencyKey);
+
+                                                    }).then(function (result) {
+
+                                                        logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Remove %s process :: %s', logKey, concurrencyKey, result);
+                                                        callback(null, result);
+
+                                                    }).catch(function (ex) {
+
+                                                        logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - Remove %s process failed :: %s', logKey, concurrencyKey, ex);
+                                                        callback(ex, null);
+                                                    });
+
+                                                }
+                                            );
+                                        }
+                                    });
+
+                                    resourceObj.ResourceAttributeInfo.forEach(function (attributeData, i) {
+                                        if (attributeData.HandlingType === taskData.HandlingType) {
+                                            attributeRemoveIndexes.push(i);
+
+                                            attributeRemoveTags.push(
+                                                {
+                                                    TagKey: util.format('Tag:Resource:%s:attribute_%d', taskData.HandlingType, attributeData.Attribute),
+                                                    TagValue: resourceKey,
+                                                    TagReference: tagReferenceKey
+                                                }
+                                            );
+                                        }
+                                    });
+
+                                    async.parallel(asyncTasks, function (err) {
+                                        if (err) {
+
+                                            logger.error('LogKey: %s - ResourceHandler - RemoveShareResource failed :: %s', logKey, err);
+                                            deferred.reject(err);
+                                        } else {
+
+                                            resourceObj.LoginTasks.splice(loginTaskRemoveIndex, 1);
+
+                                            concurrencyRemoveIndexes.reverse().forEach(function (concurrencyIndex) {
+                                                resourceObj.ConcurrencyInfo.splice(concurrencyIndex, 1);
+                                            });
+
+                                            attributeRemoveIndexes.reverse().forEach(function (attributeIndex) {
+                                                resourceObj.ResourceAttributeInfo.splice(attributeIndex, 1);
+                                            });
+
+                                            tagHandler.RemoveSpecificTags(logKey, attributeRemoveTags).then(function (result) {
+
+                                                logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Remove %s tag process :: %s', logKey, resourceKey, result);
+                                                return redisHandler.R_Set(logKey, resourceKey, JSON.stringify(resourceObj));
+                                            }).then(function (result) {
+
+                                                logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Edit %s process :: %s', logKey, resourceKey, result);
+                                                deferred.resolve(result);
+                                            }).catch(function (ex) {
+
+                                                logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - Edit %s process failed :: %s', logKey, resourceKey, ex);
+                                                deferred.reject(ex);
+                                            });
+
+                                        }
+                                    });
+
+
+                                } else {
+
+                                    // Remove task sharing information
+                                    var tagsToRemove = [];
+                                    var concurrencyKey = util.format('ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, taskData.HandlingType);
+                                    var concurrencyTagReference = util.format('TagReference:ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, taskData.HandlingType);
+
+                                    if (resourceTenantTagCount >= 2) {
+
+                                        tagsToRemove.push(
+                                            {
+                                                TagKey: util.format('Tag:Resource:tenant_%d', tenant),
+                                                TagValue: resourceKey,
+                                                TagReference: tagReferenceKey
+                                            }
+                                        );
+                                        tagsToRemove.push(
+                                            {
+                                                TagKey: util.format('Tag:ConcurrencyInfo:tenant_%d', tenant),
+                                                TagValue: concurrencyKey,
+                                                TagReference: concurrencyTagReference
+                                            }
+                                        );
+                                        for (var i = 0; i < taskData.NoOfSlots; i++) {
+                                            var slotKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+                                            var slotTagReference = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+
+                                            tagsToRemove.push(
+                                                {
+                                                    TagKey: util.format('Tag:SlotInfo:tenant_%d', tenant),
+                                                    TagValue: slotKey,
+                                                    TagReference: slotTagReference
+                                                }
+                                            );
+                                        }
+                                    }
+
+                                    if (resourceCompanyTagCount >= 2) {
+
+                                        tagsToRemove.push(
+                                            {
+                                                TagKey: util.format('Tag:Resource:company_%d', company),
+                                                TagValue: resourceKey,
+                                                TagReference: tagReferenceKey
+                                            }
+                                        );
+                                        tagsToRemove.push(
+                                            {
+                                                TagKey: util.format('Tag:Resource:company_%d', company),
+                                                TagValue: concurrencyKey,
+                                                TagReference: concurrencyTagReference
+                                            }
+                                        );
+                                        for (var j = 0; j < taskData.NoOfSlots; j++) {
+                                            var slotKey2 = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+                                            var slotTagReference2 = util.format('TagReference:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, taskData.HandlingType, i);
+
+                                            tagsToRemove.push(
+                                                {
+                                                    TagKey: util.format('Tag:SlotInfo:company_%d', company),
+                                                    TagValue: slotKey2,
+                                                    TagReference: slotTagReference2
+                                                }
+                                            );
+                                        }
+                                    }
+
+                                    tagHandler.RemoveSpecificTags(logKey, tagsToRemove).then(function () {
+
+                                        logger.info('LogKey: %s - ResourceHandler - RemoveShareResource - Remove sharing success', logKey);
+                                        deferred.reject('Remove sharing success');
+                                    }).catch(function () {
+
+                                        logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - Remove sharing failed', logKey);
+                                        deferred.reject('Remove sharing failed');
+                                    });
+
+                                }
+
+                            }).catch(function (ex) {
+
+                                logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - Search tag reference failed :: %s', logKey, ex);
+                                deferred.reject('Search tag reference failed');
+                            });
+
+                        }).catch(function () {
+
+                            logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - preProcessResourceData failed', logKey);
+                            deferred.reject('Pre-Process resource data failed');
+                        });
+
+                    } else {
+
+                        logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - R_Get Resource :: %s failed:: No resource data found', logKey, resourceKey);
+                        deferred.reject('Get resource data failed');
+                    }
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - ShareResource - R_Get Resource :: %s failed:: %s', logKey, resourceKey, ex);
+                    deferred.reject('Get resource data failed');
+                });
+
+            } else {
+
+                logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - R_SInter Resource :: %s failed:: No logged in resource found', logKey, resourceId);
+                deferred.reject('No logged in resource found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - RemoveShareResource - R_SInter Resource failed:: %s', logKey, ex);
+            deferred.reject(ex);
+        });
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - RemoveShareResource failed :: %s', logKey, ex);
         deferred.reject(ex);
     }
 
@@ -985,3 +1243,4 @@ var shareResource = function (logKey, tenant, company, resourceId, userName, han
 module.exports.RemoveResource = removeResource;
 module.exports.AddResource = addResource;
 module.exports.ShareResource = shareResource;
+module.exports.RemoveShareResource = removeShareResource;
