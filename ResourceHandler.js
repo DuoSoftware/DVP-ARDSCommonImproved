@@ -5,6 +5,7 @@
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var resourceService = require('./services/ResourceService');
 var ardsMonitoringService = require('./services/ArdsMonitoringService');
+var notificationService = require('./services/NotificationService');
 var resourceStatusMapper = require('./ResourceStatusMapper');
 var redisHandler = require('./RedisHandler');
 var q = require('q');
@@ -1242,26 +1243,26 @@ var removeShareResource = function (logKey, tenant, company, resourceId, handlin
 var setResourceAttributes = function (logKey, tenant, company, resourceId, newAttribute) {
     var deferred = q.defer();
 
-    try{
+    try {
 
         var resourceKey = util.format('Resource:%d:%d:%d', tenant, company, resourceId);
         redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
 
-            if(resourceData){
+            if (resourceData) {
 
                 var resourceObj = JSON.parse(resourceData);
 
                 var attributeIndex = -1;
                 resourceObj.ResourceAttributeInfo.forEach(function (attribute, i) {
-                    if(attribute.Attribute === newAttribute.Attribute && attribute.HandlingType === newAttribute.HandlingType)
+                    if (attribute.Attribute === newAttribute.Attribute && attribute.HandlingType === newAttribute.HandlingType)
                         attributeIndex = i;
                 });
 
                 var newAttributeTag = [];
-                if(attributeIndex > -1){
+                if (attributeIndex > -1) {
 
                     resourceObj.ResourceAttributeInfo[attributeIndex] = newAttribute;
-                }else{
+                } else {
 
                     resourceObj.ResourceAttributeInfo.push(newAttribute);
                     newAttributeTag.push(util.format('%s:attribute_%d', newAttribute.HandlingType, newAttribute.Attribute))
@@ -1282,7 +1283,7 @@ var setResourceAttributes = function (logKey, tenant, company, resourceId, newAt
                     deferred.reject('Set Resource Attribute failed');
                 });
 
-            }else{
+            } else {
 
                 logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes - No logged in resource found', logKey);
                 deferred.reject('No logged in resource found');
@@ -1294,8 +1295,380 @@ var setResourceAttributes = function (logKey, tenant, company, resourceId, newAt
             deferred.reject(ex);
         });
 
-    }catch(ex){
+    } catch (ex) {
         logger.error('LogKey: %s - ResourceHandler - SetResourceAttributes failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var getResource = function (logKey, tenant, company, resourceId, resourceKey) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - GetResource :: tenant: %d :: company: %d :: resourceId: %d :: resourceKey: %s', logKey, tenant, company, resourceId, resourceKey);
+
+        resourceKey = (resourceKey) ? resourceKey : util.format('Resource:%d:%d:%d', tenant, company, resourceId);
+        redisHandler.R_Get(logKey, resourceKey).then(function (resourceData) {
+
+            if (resourceData) {
+
+                var resourceObj = JSON.parse(resourceData);
+
+                if (resourceObj.ConcurrencyInfo && resourceObj.ConcurrencyInfo.length > 0) {
+
+                    redisHandler.R_MGet(logKey, resourceObj.ConcurrencyInfo).then(function (concurrencyData) {
+
+                        if (concurrencyData && concurrencyData.length > 0) {
+
+                            var concurrencyObjects = [];
+                            var slotObjects = [];
+                            concurrencyData.forEach(function (concurrency) {
+
+                                var concurrencyObj = JSON.parse(concurrency);
+                                if (concurrencyObj.ObjKey.indexOf('ConcurrencyInfo') > -1)
+                                    concurrencyObjects.push(concurrencyObj);
+
+                                if (concurrencyObj.ObjKey.indexOf('CSlotInfo') > -1)
+                                    slotObjects.push(concurrencyObj);
+
+                            });
+
+                            concurrencyObjects.forEach(function (task) {
+
+                                task.SlotInfo = slotObjects.filter(function (slot) {
+                                    return slot.HandlingType === task.HandlingType;
+                                });
+
+                            });
+
+                            resourceObj.ConcurrencyInfo = concurrencyObjects;
+
+                            logger.info('LogKey: %s - ResourceHandler - GetResource - success :: %j', logKey, resourceObj);
+                            deferred.resolve(resourceObj);
+
+                        } else {
+
+                            logger.info('LogKey: %s - ResourceHandler - GetResource - R_MGet: %j :: No concurrency data found', logKey, resourceObj.ConcurrencyInfo);
+                            deferred.resolve(resourceObj);
+                        }
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - GetResource - R_MGet: %j :: %s', logKey, resourceObj.ConcurrencyInfo, ex);
+                        deferred.resolve(resourceObj);
+                    });
+
+                }
+
+
+            } else {
+
+                logger.error('LogKey: %s - ResourceHandler - GetResource - R_Get: %s :: No resource data found', logKey, resourceKey);
+                deferred.reject('No resource data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - GetResource - R_Get: %s failed', logKey, resourceKey);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - GetResource failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var getResourceStatus = function (logKey, tenant, company, resourceId) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - GetResourceStatus :: tenant: %d :: company: %d :: resourceId: %d', logKey, tenant, company, resourceId);
+
+        var resourceStatusKey = util.format('ResourceState:%d:%d:%d', tenant, company, resourceId);
+        redisHandler.R_Get(logKey, resourceStatusKey).then(function (resourceStatusData) {
+
+            if (resourceStatusData) {
+
+                var resourceStatusObj = JSON.parse(resourceStatusData);
+
+                logger.info('LogKey: %s - ResourceHandler - GetResourceStatus - success :: %j', logKey, resourceStatusObj);
+                deferred.resolve(resourceStatusObj);
+
+            } else {
+
+                logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s :: No resource status data found', logKey, resourceKey);
+                deferred.reject('No resource status data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s failed', logKey, resourceKey);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - GetResourceStatus failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var getResourcesByTags = function (logKey, tenant, company, resourceClass, resourceType, resourceCategory) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler -  GetResourcesByTags :: tenant: %d :: company: %d :: resourceClass: %s :: resourceType: %s :: resourceCategory: %s', logKey, tenant, company, resourceClass, resourceType, resourceCategory);
+
+        var resourceSearchTags = [
+            'Tag:Resource:tenant_' + tenant,
+            'Tag:Resource:company_' + company,
+            'Tag:Resource:objType_Resource'
+        ];
+        if (resourceClass)
+            resourceSearchTags.push('Tag:Resource:class_' + resourceClass);
+        if (resourceType)
+            resourceSearchTags.push('Tag:Resource:type' + resourceType);
+        if (resourceCategory)
+            resourceSearchTags.push('Tag:Resource:category_' + resourceCategory);
+
+        redisHandler.R_SInter(logKey, resourceSearchTags).then(function (resourceSearchData) {
+
+            if (resourceSearchData && resourceSearchData.length > 0) {
+
+                var asyncTasks = [];
+                resourceSearchData.forEach(function (searchData) {
+                    asyncTasks.push(
+                        function (callback) {
+                            getResource(logKey, tenant, company, '', searchData).then(function (result) {
+                                callback(null, result);
+                            }).catch(function (err) {
+                                callback(err, null);
+                            })
+                        }
+                    );
+                });
+
+                async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+
+                    var resourceData = [];
+                    results.forEach(function (result) {
+                        if (result && result.value)
+                            resourceData.push(result.value);
+                    });
+                    logger.info('LogKey: %s - ResourceHandler - GetResourcesByTags - success :: %j', logKey, resourceData);
+                    deferred.resolve(resourceData);
+
+                });
+
+            } else {
+
+                logger.error('LogKey: %s - ResourceHandler - GetResourcesByTags - R_SInter: %j :: No resource search data found', logKey, resourceSearchTags);
+                deferred.reject('No resource status data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - GetResourcesByTags - R_SInter: %j failed', logKey, resourceSearchTags);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - GetResourcesByTags failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+
+var updateLastConnectedTime = function (logKey, tenant, company, resourceId, task, event, maxRejectCount) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler -  UpdateLastConnectedTime :: tenant: %d :: company: %d :: resourceId: %s :: task: %s :: event: %s :: maxRejectCount: %d', logKey, tenant, company, resourceId, task, event, maxRejectCount);
+
+        if (event == "reserved" || event == "connected") {
+            var concurrencyKey = util.format('ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, task);
+            var concurrencyVersionKey = util.format('Version:ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, task);
+            var concurrencyVersion = null;
+
+            redisHandler.R_Get(logKey, concurrencyVersionKey).then(function (version) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateLastConnectedTime - R_Get version success: %s :: %s', logKey, concurrencyVersionKey, version);
+
+                concurrencyVersion = version;
+                return redisHandler.R_Get(logKey, concurrencyKey);
+
+            }).then(function (concurrencyData) {
+
+                if (concurrencyData) {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateLastConnectedTime - R_Get concurrency success: %s', logKey, concurrencyKey);
+
+                    var concurrencyObj = JSON.parse(concurrencyData);
+                    var date = new Date();
+
+                    switch (event) {
+                        case 'reserved':
+                            concurrencyObj.MaxRejectCount = maxRejectCount;
+                            concurrencyObj.LastConnectedTime = date.toISOString();
+                            break;
+                        case 'connected':
+                            concurrencyObj.RejectCount = 0;
+                            break;
+                        default :
+                            break;
+                    }
+
+                    redisHandler.R_VersionValidate(logKey, concurrencyVersionKey, concurrencyVersion).then(function (versionResult) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateLastConnectedTime - R_VersionValidate success: %s', logKey, versionResult);
+                        redisHandler.R_Set(logKey, concurrencyKey, JSON.stringify(concurrencyObj)).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateLastConnectedTime success: %s', logKey, result);
+                            deferred.resolve(result);
+
+                        }).catch(function (ex) {
+
+                            logger.error('LogKey: %s - ResourceHandler - UpdateLastConnectedTime failed: %s :: %s', logKey, concurrencyKey, ex);
+                            deferred.reject(ex);
+                        })
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateLastConnectedTime - R_VersionValidate :: failed', logKey, ex);
+                        deferred.reject(ex);
+                    });
+
+                } else {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateLastConnectedTime - No concurrency data found: %s', logKey, concurrencyKey);
+                    deferred.reject('No concurrency data found');
+                }
+
+            }).catch(function (ex) {
+
+                logger.error('LogKey: %s - ResourceHandler - UpdateLastConnectedTime :: failed', logKey, ex);
+                deferred.reject(ex);
+            });
+        } else {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateLastConnectedTime :: invalid event : %s', logKey, event);
+            deferred.reject('Invalid event');
+        }
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateLastConnectedTime failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var updateRejectCount = function (logKey, tenant, company, resourceId, task, rejectedSession, reason) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler -  UpdateRejectCount :: tenant: %d :: company: %d :: resourceId: %s :: task: %s :: rejectedSession: %s :: reason: %s', logKey, tenant, company, resourceId, task, rejectedSession, reason);
+
+        var concurrencyKey = util.format('ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, task);
+        var concurrencyVersionKey = util.format('Version:ConcurrencyInfo:%d:%d:%d:%s', tenant, company, resourceId, task);
+        var concurrencyVersion = null;
+
+        redisHandler.R_Get(logKey, concurrencyVersionKey).then(function (version) {
+
+            logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - R_Get version success: %s :: %s', logKey, concurrencyVersionKey, version);
+
+            concurrencyVersion = version;
+            return redisHandler.R_Get(logKey, concurrencyKey);
+
+        }).then(function (concurrencyData) {
+
+            if (concurrencyData) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - R_Get concurrency success: %s', logKey, concurrencyKey);
+
+                var concurrencyObj = JSON.parse(concurrencyData);
+
+                concurrencyObj.RejectCount = concurrencyObj.RejectCount + 1;
+                concurrencyObj.LastRejectedSession = rejectedSession;
+                if (concurrencyObj.RejectCount >= concurrencyObj.MaxRejectCount) {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - Reject Count Exceeded: %s', logKey, concurrencyObj.UserName);
+                    concurrencyObj.IsRejectCountExceeded = true;
+
+                    var notificationMsg = {
+                        From: "ARDS",
+                        Direction: "STATELESS",
+                        To: cObj.UserName,
+                        Message: "Reject count Exceeded!, Account suspended for Task:: " + concurrencyObj.HandlingType
+                    };
+                    notificationService.SendNotificationInitiate(logKey, tenant, company, "message", "", notificationMsg);
+                    notificationService.SendNotificationInitiate(logKey, tenant, company, "agent_suspended", "", notificationMsg);
+                }
+
+                redisHandler.R_VersionValidate(logKey, concurrencyVersionKey, concurrencyVersion).then(function (versionResult) {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - R_VersionValidate success: %s', logKey, versionResult);
+                    redisHandler.R_Set(logKey, concurrencyKey, JSON.stringify(concurrencyObj)).then(function (result) {
+
+                        if (concurrencyObj.RejectCount >= concurrencyObj.MaxRejectCount) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - Reject Count Exceeded: %s', logKey, concurrencyObj.UserName);
+                            concurrencyObj.IsRejectCountExceeded = true;
+
+                            var notificationMsg = {
+                                From: "ARDS",
+                                Direction: "STATELESS",
+                                To: concurrencyObj.UserName,
+                                Message: "Reject count Exceeded!, Account suspended for Task:: " + concurrencyObj.HandlingType
+                            };
+                            notificationService.SendNotificationInitiate(logKey, tenant, company, "message", "", notificationMsg);
+                            notificationService.SendNotificationInitiate(logKey, tenant, company, "agent_suspended", "", notificationMsg);
+                        }
+
+                        resourceService.AddResourceTaskRejectInfo(logKey, tenant, company, resourceId, task, reason, '', rejectedSession);
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount success: %s', logKey, result);
+                        deferred.resolve(result);
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateRejectCount failed: %s :: %s', logKey, concurrencyKey, ex);
+                        deferred.reject(ex);
+                    })
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateRejectCount - R_VersionValidate :: failed', logKey, ex);
+                    deferred.reject(ex);
+                });
+
+            } else {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateRejectCount - No concurrency data found: %s', logKey, concurrencyKey);
+                deferred.reject('No concurrency data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateRejectCount :: failed', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateRejectCount failed :: %s', logKey, ex);
         deferred.reject(ex);
     }
 
@@ -1308,3 +1681,6 @@ module.exports.AddResource = addResource;
 module.exports.ShareResource = shareResource;
 module.exports.RemoveShareResource = removeShareResource;
 module.exports.SetResourceAttributes = setResourceAttributes;
+module.exports.GetResource = getResource;
+module.exports.GetResourceStatus = getResourceStatus;
+module.exports.GetResourcesByTags = getResourcesByTags;
