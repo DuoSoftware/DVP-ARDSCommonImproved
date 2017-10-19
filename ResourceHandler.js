@@ -6,6 +6,7 @@ var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var resourceService = require('./services/ResourceService');
 var ardsMonitoringService = require('./services/ArdsMonitoringService');
 var notificationService = require('./services/NotificationService');
+var scheduleWorkerService = require('./services/ScheduleWorkerService');
 var resourceStatusMapper = require('./ResourceStatusMapper');
 var redisHandler = require('./RedisHandler');
 var q = require('q');
@@ -371,7 +372,7 @@ var setResourceLogin = function (logKey, tenant, company, resourceId, userName, 
                                     ];
 
                                     async.parallel(async.reflectAll(postAsyncTasks), function () {
-                                        logger.info('LogKey: %s - ResourceHandler - AddResourceStatusDurationInfo :: Success', logKey);
+                                        logger.info('LogKey: %s - ResourceHandler - AddResourceStatusChangeInfo :: Success', logKey);
                                     });
 
                                     deferred.resolve('Resource login success');
@@ -1669,6 +1670,526 @@ var updateRejectCount = function (logKey, tenant, company, resourceId, task, rej
     } catch (ex) {
 
         logger.error('LogKey: %s - ResourceHandler - UpdateRejectCount failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var updateSlotStateReserved = function (logKey, tenant, company, resourceId, task, slotId, sessionId, maxReservedTime, maxAfterWorkTime, maxFreezeTime, maxRejectCount, otherInfo) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved :: tenant: %d :: company: %d :: resourceId: %d :: task: %s :: slotId: %d :: sessionId: %s :: maxReservedTime: %d :: maxAfterWorkTime: %d :: maxFreezeTime: %d :: maxRejectCount: %d :: otherInfo: %s', logKey, tenant, company, resourceId, task, slotId, sessionId, maxReservedTime, maxAfterWorkTime, maxFreezeTime, maxRejectCount, otherInfo);
+
+        var slotDataKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotDataVersionKey = util.format('Version:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotVersion = null;
+
+        redisHandler.R_Get(logKey, slotDataVersionKey).then(function (version) {
+
+            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_Get version success: %s :: %s', logKey, slotDataVersionKey, version);
+
+            slotVersion = version;
+            return redisHandler.R_Get(logKey, slotDataKey);
+
+        }).then(function (slotData) {
+
+            if (slotData) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_Get slot success: %s', logKey, slotDataKey);
+
+                var slotObj = JSON.parse(slotData);
+
+                var date = new Date();
+                var lastStatusChangedTime = deepcopy(slotObj.StateChangeTime);
+                var lastStatus = deepcopy(slotObj.State);
+                var lastOtherInfo = deepcopy(slotObj.OtherInfo);
+                slotObj.State = "Reserved";
+                slotObj.StateChangeTime = date.toISOString();
+                slotObj.HandlingRequest = sessionId;
+                slotObj.LastReservedTime = date.toISOString();
+                slotObj.OtherInfo = otherInfo;
+                slotObj.MaxReservedTime = maxReservedTime;
+                slotObj.MaxAfterWorkTime = maxAfterWorkTime;
+                slotObj.MaxFreezeTime = maxFreezeTime;
+
+                redisHandler.R_VersionValidate(logKey, slotDataVersionKey, slotVersion).then(function (versionResult) {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_VersionValidate success: %s', logKey, versionResult);
+
+                    var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', sessionId);
+
+                    redisHandler.R_Set(logKey, requestHandlingTagKey, slotObj.ObjKey).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_Set requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                        return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
+
+                    }).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_Set Slot data: %s :: %s', logKey, slotDataKey, result);
+                        var tagSourceKey = util.format('Tag:SlotInfo:state_%s', lastStatus);
+                        var tagDestinationKey = util.format('Tag:SlotInfo:state_%s', slotObj.State);
+                        return tagHandler.MoveTag(logKey, tagSourceKey, tagDestinationKey, slotObj.ObjKey);
+
+                    }).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - Move slot Tag :: %s', logKey, result);
+
+                        var duration = moment(slotObj.StateChangeTime).diff(moment(lastStatusChangedTime), 'seconds');
+                        var postAsyncTasks = [
+                            function (callback) {
+                                updateLastConnectedTime(logKey, tenant, company, resourceId, task, 'reserved', maxRejectCount).then(function (result) {
+                                    callback(null, result);
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+                            },
+                            function (callback) {
+                                resourceStatusMapper.SetResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'SlotStatus', slotObj.State, otherInfo, {
+                                    SessionId: sessionId,
+                                    Direction: ""
+                                }).then(function () {
+                                    resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'SlotStatus', lastStatus, '', lastOtherInfo, sessionId, duration).then(function (result) {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+                            }
+                        ];
+
+                        async.parallel(async.reflectAll(postAsyncTasks), function () {
+                            logger.info('LogKey: %s - ResourceHandler - AddResourceStatusChangeInfo :: Success', logKey);
+                        });
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved success: %s', logKey, result);
+                        deferred.resolve(result);
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateReserved failed: %s :: %s', logKey, slotDataKey, ex);
+                        deferred.reject(ex);
+                    })
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_VersionValidate :: failed', logKey, ex);
+                    deferred.reject(ex);
+                });
+
+            } else {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - No slot data found: %s', logKey, slotDataKey);
+                deferred.reject('No slot data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateReserved :: failed', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateReserved failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var updateSlotStateConnected = function (logKey, tenant, company, resourceId, task, slotId, sessionId, direction, otherInfo) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved :: tenant: %d :: company: %d :: resourceId: %d :: task: %s :: slotId: %d :: sessionId: %s :: direction: %s :: otherInfo: %s', logKey, tenant, company, resourceId, task, slotId, sessionId, direction, otherInfo);
+
+        var slotDataKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotDataVersionKey = util.format('Version:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotVersion = null;
+
+        redisHandler.R_Get(logKey, slotDataVersionKey).then(function (version) {
+
+            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_Get version success: %s :: %s', logKey, slotDataVersionKey, version);
+
+            slotVersion = version;
+            return redisHandler.R_Get(logKey, slotDataKey);
+
+        }).then(function (slotData) {
+
+            if (slotData) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_Get slot success: %s', logKey, slotDataKey);
+
+                var slotObj = JSON.parse(slotData);
+
+                var date = new Date();
+                var lastStatusChangedTime = deepcopy(slotObj.StateChangeTime);
+                var lastStatus = deepcopy(slotObj.State);
+                var lastOtherInfo = deepcopy(slotObj.OtherInfo);
+
+                slotObj.State = "Connected";
+                slotObj.StateChangeTime = date.toISOString();
+                slotObj.HandlingRequest = sessionId;
+                slotObj.OtherInfo = otherInfo;
+
+                redisHandler.R_VersionValidate(logKey, slotDataVersionKey, slotVersion).then(function (versionResult) {
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_VersionValidate success: %s', logKey, versionResult);
+
+                    var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', sessionId);
+
+                    redisHandler.R_Set(logKey, requestHandlingTagKey, slotObj.ObjKey).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_Set requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                        return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
+
+                    }).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_Set Slot data: %s :: %s', logKey, slotDataKey, result);
+                        var tagSourceKey = util.format('Tag:SlotInfo:state_%s', lastStatus);
+                        var tagDestinationKey = util.format('Tag:SlotInfo:state_%s', slotObj.State);
+                        return tagHandler.MoveTag(logKey, tagSourceKey, tagDestinationKey, slotObj.ObjKey);
+
+                    }).then(function (result) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - Move slot Tag :: %s', logKey, result);
+
+                        var duration = moment(slotObj.StateChangeTime).diff(moment(lastStatusChangedTime), 'seconds');
+                        var postAsyncTasks = [
+                            function (callback) {
+                                updateLastConnectedTime(logKey, tenant, company, resourceId, task, 'connected', 0).then(function (result) {
+                                    callback(null, result);
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+                            },
+                            function (callback) {
+                                if (otherInfo == "" || otherInfo == null)
+                                    otherInfo = "Connected";
+
+                                resourceStatusMapper.SetResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'SlotStatus', slotObj.State, task, {
+                                    SessionId: sessionId,
+                                    Direction: direction
+                                }).then(function () {
+                                    resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'SlotStatus', lastStatus, '', lastOtherInfo, sessionId, duration).then(function (result) {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+                            }
+                        ];
+
+                        async.parallel(async.reflectAll(postAsyncTasks), function () {
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected :: Success', logKey);
+                        });
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected success: %s', logKey, result);
+                        deferred.resolve(result);
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateConnected failed: %s :: %s', logKey, slotDataKey, ex);
+                        deferred.reject(ex);
+                    })
+
+                }).catch(function (ex) {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_VersionValidate :: failed', logKey, ex);
+                    deferred.reject(ex);
+                });
+
+            } else {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - No slot data found: %s', logKey, slotDataKey);
+                deferred.reject('No slot data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateConnected :: failed', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateConnected failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var updateSlotStateAfterWork = function (logKey, tenant, company, resourceId, task, slotId, sessionId, direction, reason, otherInfo) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork :: tenant: %d :: company: %d :: resourceId: %d :: task: %s :: slotId: %d :: sessionId: %s :: direction: %s :: reason: %s :: otherInfo: %s', logKey, tenant, company, resourceId, task, slotId, sessionId, direction, reason, otherInfo);
+
+        var slotDataKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotDataVersionKey = util.format('Version:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotVersion = null;
+
+        redisHandler.R_Get(logKey, slotDataVersionKey).then(function (version) {
+
+            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_Get version success: %s :: %s', logKey, slotDataVersionKey, version);
+
+            slotVersion = version;
+            return redisHandler.R_Get(logKey, slotDataKey);
+
+        }).then(function (slotData) {
+
+            if (slotData) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_Get slot success: %s', logKey, slotDataKey);
+
+                var slotObj = JSON.parse(slotData);
+
+                var date = new Date();
+                var lastStatusChangedTime = deepcopy(slotObj.StateChangeTime);
+                var lastStatus = deepcopy(slotObj.State);
+                var lastOtherInfo = deepcopy(slotObj.OtherInfo);
+
+                if (lastStatus === "Connected" || lastStatus === "Reserved") {
+
+                    slotObj.State = "AfterWork";
+                    slotObj.StateChangeTime = date.toISOString();
+                    slotObj.OtherInfo = otherInfo;
+
+                    redisHandler.R_VersionValidate(logKey, slotDataVersionKey, slotVersion).then(function (versionResult) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_VersionValidate success: %s', logKey, versionResult);
+
+                        redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj)).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_Set Slot data: %s :: %s', logKey, slotDataKey, result);
+
+                            var duration = moment(slotObj.StateChangeTime).diff(moment(lastStatusChangedTime), 'seconds');
+                            var postAsyncTasks = [
+                                function (callback) {
+                                    resourceStatusMapper.SetResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'SlotStatus', 'Completed', task, {
+                                        SessionId: sessionId,
+                                        Direction: task+direction
+                                    }).then(function () {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                },
+                                function (callback) {
+                                    resourceStatusMapper.SetResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'SlotStatus', 'Completed', slotObj.State, {
+                                        SessionId: sessionId,
+                                        Direction: task+direction
+                                    }).then(function () {
+                                        resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'SlotStatus', lastStatus, '', lastOtherInfo, sessionId, duration).then(function (result) {
+                                            callback(null, result);
+                                        }).catch(function (ex) {
+                                            callback(ex, null);
+                                        });
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                }
+                            ];
+
+                            async.parallel(async.reflectAll(postAsyncTasks), function () {
+                                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork :: Success', logKey);
+                            });
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork success: %s', logKey, result);
+                            deferred.resolve(result);
+
+                        }).catch(function (ex) {
+
+                            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork failed: %s :: %s', logKey, slotDataKey, ex);
+                            deferred.reject(ex);
+                        })
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_VersionValidate :: failed', logKey, ex);
+                        deferred.reject(ex);
+                    });
+                }else{
+
+                    logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - Cannot proceed to AfterWork while on %s state', logKey, lastStatus);
+                    deferred.reject(util.format('Cannot proceed to AfterWork while on %s state', lastStatus));
+                }
+
+            } else {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - No slot data found: %s', logKey, slotDataKey);
+                deferred.reject('No slot data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork :: failed', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var updateSlotStateAvailable = function (logKey, tenant, company, resourceId, task, slotId, reason, otherInfo, callingParty) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable :: tenant: %d :: company: %d :: resourceId: %d :: task: %s :: slotId: %d :: reason: %s :: callingParty: %s :: otherInfo: %s', logKey, tenant, company, resourceId, task, slotId, reason, callingParty, otherInfo);
+
+        var slotDataKey = util.format('CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotDataVersionKey = util.format('Version:CSlotInfo:%d:%d:%d:%s:%d', tenant, company, resourceId, task, slotId);
+        var slotVersion = null;
+
+        redisHandler.R_Get(logKey, slotDataVersionKey).then(function (version) {
+
+            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_Get version success: %s :: %s', logKey, slotDataVersionKey, version);
+
+            slotVersion = version;
+            return redisHandler.R_Get(logKey, slotDataKey);
+
+        }).then(function (slotData) {
+
+            if (slotData) {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_Get slot success: %s', logKey, slotDataKey);
+
+                var slotObj = JSON.parse(slotData);
+
+                var date = new Date();
+                var lastStatusChangedTime = deepcopy(slotObj.StateChangeTime);
+                var lastStatus = deepcopy(slotObj.State);
+                var lastOtherInfo = deepcopy(slotObj.OtherInfo);
+                var handledRequest = deepcopy(slotObj.HandlingRequest);
+
+                if (callingParty === "Completed" && slotObj.State === "AfterWork" && slotObj.FreezeAfterWorkTime === true) {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - Reject available request:: Completed', logKey);
+                    deferred.reject('Reject available request:: Completed');
+                } else if (callingParty === "Completed" && slotObj.State === "Reserved") {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - Reject available request:: Reserved', logKey);
+                    deferred.reject('Reject available request:: Reserved');
+                } else if (callingParty === "Completed" && slotObj.State === "Connected") {
+
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - Reject available request:: Connected', logKey);
+                    deferred.reject('Reject available request:: Connected');
+                } else if (callingParty === "endFreeze" && slotObj.State != "AfterWork") {
+                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - Reject available request:: EndFreeze', logKey);
+                    deferred.reject('Reject available request:: EndFreeze');
+                } else {
+
+                    slotObj.State = "Available";
+                    slotObj.StateChangeTime = date.toISOString();
+                    slotObj.HandlingRequest = "";
+                    slotObj.FreezeAfterWorkTime = false;
+                    slotObj.OtherInfo = "";
+
+                    redisHandler.R_VersionValidate(logKey, slotDataVersionKey, slotVersion).then(function (versionResult) {
+
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_VersionValidate success: %s', logKey, versionResult);
+
+                        var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', handledRequest);
+
+                        redisHandler.R_Del(logKey, requestHandlingTagKey).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_Del requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                            return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
+
+                        }).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_Set Slot data: %s :: %s', logKey, slotDataKey, result);
+                            var tagSourceKey = util.format('Tag:SlotInfo:state_%s', lastStatus);
+                            var tagDestinationKey = util.format('Tag:SlotInfo:state_%s', slotObj.State);
+                            return tagHandler.MoveTag(logKey, tagSourceKey, tagDestinationKey, slotObj.ObjKey);
+
+                        }).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - Move slot Tag :: %s', logKey, result);
+
+                            if (slotObj.FreezeAfterWorkTime) {
+                                try {
+                                    scheduleWorkerService.endFreeze(company, tenant, resourceId, logKey);
+                                } catch (ex) {
+                                    console.log('scheduleWorkerHandler.endFreeze Error :: ' + ex);
+                                }
+                            }
+
+                            var duration = moment(slotObj.StateChangeTime).diff(moment(lastStatusChangedTime), 'seconds');
+                            var postAsyncTasks = [
+                                function (callback) {
+                                    updateLastConnectedTime(logKey, tenant, company, resourceId, task, 'connected', 0).then(function (result) {
+                                        callback(null, result);
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                },
+                                function (callback) {
+                                    if (otherInfo == "" || otherInfo == null)
+                                        otherInfo = "Connected";
+
+                                    resourceStatusMapper.SetResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'SlotStatus', slotObj.State, otherInfo, {
+                                        SessionId: handledRequest,
+                                        Direction: ""
+                                    }).then(function () {
+                                        resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'SlotStatus', lastStatus, '', lastOtherInfo, handledRequest, duration).then(function (result) {
+                                            callback(null, result);
+                                        }).catch(function (ex) {
+                                            callback(ex, null);
+                                        });
+                                    }).catch(function (ex) {
+                                        callback(ex, null);
+                                    });
+                                }
+                            ];
+
+                            async.parallel(async.reflectAll(postAsyncTasks), function () {
+                                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable :: Success', logKey);
+                            });
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable success: %s', logKey, result);
+                            deferred.resolve(result);
+
+                        }).catch(function (ex) {
+
+                            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable failed: %s :: %s', logKey, slotDataKey, ex);
+                            deferred.reject(ex);
+                        })
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_VersionValidate :: failed', logKey, ex);
+                        deferred.reject(ex);
+                    });
+                }
+
+            } else {
+
+                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - No slot data found: %s', logKey, slotDataKey);
+                deferred.reject('No slot data found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable :: failed', logKey, ex);
+            deferred.reject(ex);
+        });
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable failed :: %s', logKey, ex);
         deferred.reject(ex);
     }
 

@@ -165,7 +165,31 @@ var removeSpecificTags = function (logKey, tagsAndValues) {
     return deferred.promise;
 };
 
+var moveTag = function (logKey, sourceKey, destinationKey, tagValue) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - TagHandler - MoveTag :: sourceKey: %s :: destinationKey: %s :: tagValue: %s', logKey, sourceKey, destinationKey, tagValue);
+
+        redisHandler.R_SMove(logKey, sourceKey, destinationKey, tagValue).then(function (result) {
+
+            logger.info('LogKey: %s - TagHandler - MoveTag  success :: %s', logKey, result);
+            deferred.resolve('Tag execution finished');
+        }).catch(function (ex) {
+            logger.error('LogKey: %s - TagHandler - MoveTag failed :: %s', logKey, ex);
+            deferred.reject('Pipe commands execution failed');
+        });
+
+    }catch(ex){
+
+        logger.error('LogKey: %s - TagHandler - MoveTag failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise();
+};
 
 module.exports.SetTags = setTags;
 module.exports.RemoveTags = removeTags;
 module.exports.RemoveSpecificTags = removeSpecificTags;
+module.exports.MoveTag = moveTag;
