@@ -31,11 +31,11 @@ var setTags = function (logKey, tagPrefix, tags, tagValue) {
 
         if(pipeCommands.length >0){
 
-            redisHandler.R_Pipeline(logKey, pipeCommands).then(function (result) {
+            redisHandler.R_Pipeline(logKey, pipeCommands).then(function () {
 
                 logger.info('LogKey: %s - TagHandler - SetTags :: pipe commands execution success', logKey);
                 deferred.resolve('Tag execution finished');
-            }).catch(function (ex) {
+            }).catch(function () {
                 logger.error('LogKey: %s - TagHandler - SetTags :: Pipe commands execution failed', logKey);
                 deferred.reject('Pipe commands execution failed');
             });
@@ -75,7 +75,7 @@ var removeTags = function (logKey, tagValue) {
 
                 if(pipeCommands.length >0){
 
-                    redisHandler.R_Pipeline(logKey, pipeCommands).then(function (result) {
+                    redisHandler.R_Pipeline(logKey, pipeCommands).then(function () {
 
                         logger.info('LogKey: %s - TagHandler - RemoveTags :: pipe commands execution success', logKey);
                         return redisHandler.R_Del(logKey, tagReference);
@@ -174,6 +174,12 @@ var moveTag = function (logKey, sourceKey, destinationKey, tagValue) {
         redisHandler.R_SMove(logKey, sourceKey, destinationKey, tagValue).then(function (result) {
 
             logger.info('LogKey: %s - TagHandler - MoveTag  success :: %s', logKey, result);
+
+            var tagReference = util.format('%s:%s', 'TagReference', tagValue);
+            return redisHandler.R_SAdd(logKey, tagReference, destinationKey);
+        }).then(function (result) {
+
+            logger.info('LogKey: %s - TagHandler - R_SAdd tagReference success :: %s', logKey, result);
             deferred.resolve('Tag execution finished');
         }).catch(function (ex) {
             logger.error('LogKey: %s - TagHandler - MoveTag failed :: %s', logKey, ex);
@@ -186,7 +192,7 @@ var moveTag = function (logKey, sourceKey, destinationKey, tagValue) {
         deferred.reject(ex);
     }
 
-    return deferred.promise();
+    return deferred.promise;
 };
 
 module.exports.SetTags = setTags;

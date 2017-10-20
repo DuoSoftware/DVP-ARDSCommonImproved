@@ -13,6 +13,8 @@ var q = require('q');
 var async = require('async');
 var tagHandler = require('./TagHandler');
 var util = require('util');
+var deepcopy = require('deepcopy');
+var moment = require('moment');
 
 
 var preProcessResourceData = function (logKey, tenant, company, resourceId, handlingType) {
@@ -525,7 +527,7 @@ var removeResource = function (logKey, tenant, company, resourceId) {
             } else {
 
                 logger.error('LogKey: %s - ResourceHandler - RemoveResource - No logged in resource data found', logKey);
-                deferred.reject(ex);
+                deferred.reject('No logged in resource data found');
             }
 
         }).catch(function (ex) {
@@ -874,7 +876,7 @@ var editResource = function (logKey, tenant, company, handlingType, existingReso
 
                 }
 
-                async.parallel(asyncTasks, function (err, results) {
+                async.parallel(asyncTasks, function (err) {
 
                     if (err) {
 
@@ -1403,13 +1405,13 @@ var getResourceStatus = function (logKey, tenant, company, resourceId) {
 
             } else {
 
-                logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s :: No resource status data found', logKey, resourceKey);
+                logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s :: No resource status data found', logKey, resourceStatusKey);
                 deferred.reject('No resource status data found');
             }
 
         }).catch(function (ex) {
 
-            logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s failed', logKey, resourceKey);
+            logger.error('LogKey: %s - ResourceHandler - GetResourceStatus - R_Get: %s failed', logKey, resourceStatusKey);
             deferred.reject(ex);
         });
 
@@ -1611,7 +1613,7 @@ var updateRejectCount = function (logKey, tenant, company, resourceId, task, rej
                     var notificationMsg = {
                         From: "ARDS",
                         Direction: "STATELESS",
-                        To: cObj.UserName,
+                        To: concurrencyObj.UserName,
                         Message: "Reject count Exceeded!, Account suspended for Task:: " + concurrencyObj.HandlingType
                     };
                     notificationService.SendNotificationInitiate(logKey, tenant, company, "message", "", notificationMsg);
@@ -1718,11 +1720,13 @@ var updateSlotStateReserved = function (logKey, tenant, company, resourceId, tas
 
                     logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_VersionValidate success: %s', logKey, versionResult);
 
-                    var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', sessionId);
+                    var requestHandlingTag = [
+                        util.format('handlingRequest_%s', sessionId)
+                    ];
 
-                    redisHandler.R_SAdd(logKey, requestHandlingTagKey, slotObj.ObjKey).then(function (result) {
+                    tagHandler.SetTags(logKey, 'Tag:SlotInfo', requestHandlingTag, slotObj.ObjKey).then(function (result) {
 
-                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_SAdd requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateReserved - R_SAdd requestHandlingTag: %j :: %s', logKey, requestHandlingTag, result);
                         return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
 
                     }).then(function (result) {
@@ -1840,11 +1844,13 @@ var updateSlotStateConnected = function (logKey, tenant, company, resourceId, ta
 
                     logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_VersionValidate success: %s', logKey, versionResult);
 
-                    var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', sessionId);
+                    var requestHandlingTag = [
+                        util.format('handlingRequest_%s', sessionId)
+                    ];
 
-                    redisHandler.R_SAdd(logKey, requestHandlingTagKey, slotObj.ObjKey).then(function (result) {
+                    tagHandler.SetTags(logKey, 'Tag:SlotInfo', requestHandlingTag, slotObj.ObjKey).then(function (result) {
 
-                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - R_SAdd requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                        logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateConnected - SetTags requestHandlingTag: %j :: %s', logKey, requestHandlingTag, result);
                         return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
 
                     }).then(function (result) {
@@ -1969,6 +1975,13 @@ var updateSlotStateAfterWork = function (logKey, tenant, company, resourceId, ta
                         redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj)).then(function (result) {
 
                             logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - R_Set Slot data: %s :: %s', logKey, slotDataKey, result);
+                            var tagSourceKey = util.format('Tag:SlotInfo:state_%s', lastStatus);
+                            var tagDestinationKey = util.format('Tag:SlotInfo:state_%s', slotObj.State);
+                            return tagHandler.MoveTag(logKey, tagSourceKey, tagDestinationKey, slotObj.ObjKey);
+
+                        }).then(function (result) {
+
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAfterWork - MoveTag :: %s', logKey, slotDataKey, result);
 
                             var duration = moment(slotObj.StateChangeTime).diff(moment(lastStatusChangedTime), 'seconds');
                             var postAsyncTasks = [
@@ -2101,11 +2114,17 @@ var updateSlotStateAvailable = function (logKey, tenant, company, resourceId, ta
 
                         logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_VersionValidate success: %s', logKey, versionResult);
 
-                        var requestHandlingTagKey = util.format('Tag:SlotInfo:handlingRequest_%s', handledRequest);
+                        var requestHandlingTagToRemove = [
+                            {
+                                TagKey: util.format('Tag:SlotInfo:handlingRequest_%s', handledRequest),
+                                TagValue: slotObj.ObjKey,
+                                TagReference: util.format('TagReference:%s', slotObj.ObjKey)
+                            }
+                        ];
 
-                        redisHandler.R_SRem(logKey, requestHandlingTagKey, slotObj.ObjKey).then(function (result) {
+                        tagHandler.RemoveSpecificTags(logKey, requestHandlingTagToRemove).then(function (result) {
 
-                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - R_SRem requestHandlingTagKey: %s :: %s', logKey, requestHandlingTagKey, result);
+                            logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateAvailable - RemoveSpecificTags requestHandlingTagToRemove: %j :: %s', logKey, requestHandlingTagToRemove, result);
                             return redisHandler.R_Set(logKey, slotDataKey, JSON.stringify(slotObj));
 
                         }).then(function (result) {
@@ -2341,7 +2360,7 @@ var updateSlotStateBySessionId = function (logKey, tenant, company, resourceId, 
 
         var slotSearchTags = [];
 
-        if (direction === "outbound" && state === "Connected") {
+        if (direction === "outbound" && state.toLowerCase() === "connected") {
 
             slotSearchTags = [
                 'Tag:SlotInfo:tenant_' + tenant,
@@ -2360,53 +2379,62 @@ var updateSlotStateBySessionId = function (logKey, tenant, company, resourceId, 
                     var reservedSlots = [];
                     var afterWorkSlots = [];
                     var connectedSlots = [];
-                    searchSlotData.forEach(function (searchSlot) {
 
-                        if (searchSlot) {
-                            var slotObj = JSON.parse(searchSlot);
+                    redisHandler.R_MGet(logKey, searchSlotData).then(function (searchSlotData) {
 
-                            switch (slotObj.State) {
-                                case 'Available':
-                                    availableSlots.push(slotObj);
-                                    break;
-                                case 'Reserved':
-                                    reservedSlots.push(slotObj);
-                                    break;
-                                case 'AfterWork':
-                                    afterWorkSlots.push(slotObj);
-                                    break;
-                                case 'Connected':
-                                    connectedSlots.push(slotObj);
-                                    break;
-                                default :
-                                    break;
+                        searchSlotData.forEach(function (searchSlot) {
+
+                            if (searchSlot) {
+
+                                var slotObj = JSON.parse(searchSlot);
+
+                                switch (slotObj.State) {
+                                    case 'Available':
+                                        availableSlots.push(slotObj);
+                                        break;
+                                    case 'Reserved':
+                                        reservedSlots.push(slotObj);
+                                        break;
+                                    case 'AfterWork':
+                                        afterWorkSlots.push(slotObj);
+                                        break;
+                                    case 'Connected':
+                                        connectedSlots.push(slotObj);
+                                        break;
+                                    default :
+                                        break;
+                                }
                             }
+
+                        });
+
+                        if (availableSlots.length > 0) {
+                            selectedSlot = availableSlots[0];
+                        } else if (reservedSlots.length > 0) {
+                            selectedSlot = reservedSlots[0];
+                        } else if (afterWorkSlots.length > 0) {
+                            selectedSlot = afterWorkSlots[0];
+                        } else if (connectedSlots.length > 0) {
+                            selectedSlot = connectedSlots[0];
+                        } else {
+                            selectedSlot = null;
                         }
 
+                        if (selectedSlot) {
+
+                            return updateSlotStateConnected(logKey, tenant, company, resourceId, task, selectedSlot.SlotId, sessionId, direction, otherInfo);
+
+                        } else {
+
+                            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - No Resource CSlot found', logKey);
+                            deferred.reject('No Resource CSlot found');
+                        }
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - R_MGet %j :: %s', logKey, searchSlotData, ex);
+                        deferred.reject(ex);
                     });
-
-                    if (availableSlots.length > 0) {
-                        selectedSlot = availableSlots[0];
-                    } else if (reservedSlots.length > 0) {
-                        selectedSlot = reservedSlots[0];
-                    } else if (afterWorkSlots.length > 0) {
-                        selectedSlot = afterWorkSlots[0];
-                    } else if (connectedSlots.length > 0) {
-                        selectedSlot = connectedSlots[0];
-                    } else {
-                        selectedSlot = null;
-                    }
-
-                    if (selectedSlot) {
-
-                        return updateSlotStateConnected(logKey, tenant, company, resourceId, task, selectedSlot.SlotId, sessionId, direction, otherInfo);
-
-                    } else {
-
-                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - No Resource CSlot found', logKey);
-                        deferred.reject('No Resource CSlot found');
-                    }
-
                 } else {
 
                     logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - No Resource CSlot found', logKey);
@@ -2436,116 +2464,123 @@ var updateSlotStateBySessionId = function (logKey, tenant, company, resourceId, 
 
                 if (searchSlotData && searchSlotData.length > 0) {
 
-                    var asyncTasks = [];
-                    searchSlotData.forEach(function (searchSlot) {
+                    redisHandler.R_MGet(logKey, searchSlotData).then(function (searchSlotData) {
 
-                        if (searchSlot) {
-                            var slotObj = JSON.parse(searchSlot);
+                        var asyncTasks = [];
+                        searchSlotData.forEach(function (searchSlot) {
 
-                            switch (state.toLowerCase()){
-                                case 'reject':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateRejectCount(logKey, tenant, company, slotObj.ResourceId, task, sessionId, reason).then(function (result) {
-                                                var pubMessage = util.format("EVENT:%s:%s:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, "ARDS", "REQUEST", "REJECT", reason, slotObj.ResourceId, sessionId);
-                                                redisHandler.R_Publish(logKey, 'events', pubMessage);
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateCompleted(logKey, tenant,company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                case 'available':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateAvailable(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, reason, otherInfo, 'Available').then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                case 'connected':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateConnected(logKey, tenant,company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                case 'completed':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateCompleted(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                case 'freeze':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateFreeze(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, reason, otherInfo).then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                case 'endfreeze':
-                                    asyncTasks.push(
-                                        function (callback) {
-                                            updateSlotStateAvailable(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, '', 'AfterWork', 'endFreeze').then(function (result) {
-                                                callback(null, result);
-                                            }).catch(function (ex) {
-                                                callback(ex, null);
-                                            });
-                                        }
-                                    );
-                                    break;
-                                default :
-                                    break;
-                            }
+                            if (searchSlot) {
+                                var slotObj = JSON.parse(searchSlot);
 
-                        }
-                    });
+                                switch (state.toLowerCase()) {
+                                    case 'reject':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateRejectCount(logKey, tenant, company, slotObj.ResourceId, task, sessionId, reason).then(function (result) {
+                                                    var pubMessage = util.format("EVENT:%s:%s:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, "ARDS", "REQUEST", "REJECT", reason, slotObj.ResourceId, sessionId);
+                                                    redisHandler.R_Publish(logKey, 'events', pubMessage);
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateCompleted(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    case 'available':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateAvailable(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, reason, otherInfo, 'Available').then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    case 'connected':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateConnected(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    case 'completed':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateCompleted(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, sessionId, direction, otherInfo).then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    case 'freeze':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateFreeze(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, reason, otherInfo).then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    case 'endfreeze':
+                                        asyncTasks.push(
+                                            function (callback) {
+                                                updateSlotStateAvailable(logKey, tenant, company, slotObj.ResourceId, task, slotObj.SlotId, '', 'AfterWork', 'endFreeze').then(function (result) {
+                                                    callback(null, result);
+                                                }).catch(function (ex) {
+                                                    callback(ex, null);
+                                                });
+                                            }
+                                        );
+                                        break;
+                                    default :
+                                        break;
+                                }
 
-                    if(asyncTasks.length > 0){
-
-                        async.parallel(async.reflectAll(asyncTasks), function (err, results) {
-                            if(err){
-
-                                logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Process failed :: %s', logKey, err);
-                                deferred.reject(err);
-                            }else{
-
-                                logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Process finished :: %j', logKey, results);
-                                deferred.reject('Update slot state by sessionId: Process finished');
                             }
                         });
 
-                    }else{
+                        if (asyncTasks.length > 0) {
 
-                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Invalid request', logKey);
-                        deferred.reject('Invalid request');
-                    }
+                            async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+                                if (err) {
+
+                                    logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Process failed :: %s', logKey, err);
+                                    deferred.reject(err);
+                                } else {
+
+                                    logger.info('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Process finished :: %j', logKey, results);
+                                    deferred.reject('Update slot state by sessionId: Process finished');
+                                }
+                            });
+
+                        } else {
+
+                            logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - Invalid request', logKey);
+                            deferred.reject('Invalid request');
+                        }
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - ResourceHandler - UpdateSlotStateBySessionId - R_MGet %j :: %s', logKey, searchSlotData, ex);
+                        deferred.reject(ex);
+                    });
 
                 } else {
 

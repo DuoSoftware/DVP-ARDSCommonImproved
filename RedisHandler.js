@@ -5,7 +5,7 @@
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var q = require('q');
 var redis = require('ioredis');
-var redisLock = require('redlock');
+var redisLock = require('redLock');
 var config = require('config');
 
 var redisIp = config.Redis.ip;
@@ -115,7 +115,7 @@ var rSet = function (logKey, key, value) {
     try {
         logger.info('LogKey: %s - Redis SET :: key: %s :: value: %s', logKey, key, value);
 
-        redlock.lock('lock:' + key, 500).then(function (lock) {
+        redLock.lock('lock:' + key, 500).then(function (lock) {
             client.set(key, value, function (err, result) {
                 lock.unlock().catch(function (err) {
                     logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
@@ -753,7 +753,7 @@ var rVersionValidate = function (logKey, versionKey, version) {
         if (version) {
             var versionInt = parseInt(version);
 
-            redlock.lock('lock:' + versionKey, 500).then(function (lock) {
+            redLock.lock('lock:' + versionKey, 500).then(function (lock) {
                 client.get(versionKey, function (err, result) {
                     if (err) {
                         lock.unlock().catch(function (err) {
@@ -770,7 +770,7 @@ var rVersionValidate = function (logKey, versionKey, version) {
                                     logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
                                 });
                                 logger.info('LogKey: %s - Version matched :: %s', logKey, result);
-                                deferred.reject('Version matched');
+                                deferred.resolve('Version matched');
                             } else {
                                 lock.unlock().catch(function (err) {
                                     logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);

@@ -35,9 +35,9 @@ var processState = function (logKey, tenant, company, stateKey, resourceId, reso
                 if (r_StatusObj && r_StatusObj.State === "NotAvailable" && r_StatusObj.Reason.toLowerCase().indexOf('break') > -1) {
 
                     var duration = moment(statusObj.StateChangeTime).diff(moment(r_StatusObj.StateChangeTime), 'seconds');
-                    resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'ResourceStatus', r_StatusObj.State, r_StatusObj.Reason, '', '', duration).then(function (result) {
+                    resourceService.AddResourceStatusDurationInfo(logKey, tenant, company, resourceId, 'ResourceStatus', r_StatusObj.State, r_StatusObj.Reason, '', '', duration).then(function () {
                         logger.info('LogKey: %s - ResourceStatusMapper - processState - AddResourceStatusDurationInfo :: Success', logKey);
-                    }).catch(function (ex) {
+                    }).catch(function () {
                         logger.info('LogKey: %s - ResourceStatusMapper - processState - AddResourceStatusDurationInfo :: Failed', logKey);
                     });
                 }
@@ -50,9 +50,9 @@ var processState = function (logKey, tenant, company, stateKey, resourceId, reso
                         setResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'ResourceStatus', r_StatusObj.State, 'end' + r_StatusObj.Mode, {
                             SessionId: "",
                             Direction: ""
-                        }).then(function (result) {
+                        }).then(function () {
                             logger.info('LogKey: %s - ResourceStatusMapper - processState - setResourceStatusChangeInfo :: Success', logKey);
-                        }).catch(function (ex) {
+                        }).catch(function () {
                             logger.info('LogKey: %s - ResourceStatusMapper - processState - setResourceStatusChangeInfo :: Failed', logKey);
                         });
 
@@ -83,7 +83,7 @@ var processState = function (logKey, tenant, company, stateKey, resourceId, reso
                                 }
                             );
 
-                            async.parallel(async.reflectAll(asyncTasks), function (err, results) {
+                            async.parallel(async.reflectAll(asyncTasks), function () {
                                 logger.info('LogKey: %s - ResourceStatusMapper - AddResourceStatusDurationInfo|AddResourceStatusDurationInfo :: Success', logKey);
                             });
 
@@ -106,9 +106,9 @@ var processState = function (logKey, tenant, company, stateKey, resourceId, reso
                     setResourceStatusChangeInfo(logKey, tenant, company, resourceId, 'ResourceStatus', r_StatusObj.State, 'end' + r_StatusObj.Mode, {
                         SessionId: "",
                         Direction: ""
-                    }).then(function (result) {
+                    }).then(function () {
                         logger.info('LogKey: %s - ResourceStatusMapper - processState - AddResourceStatusDurationInfo :: Success', logKey);
-                    }).catch(function (ex) {
+                    }).catch(function () {
                         logger.info('LogKey: %s - ResourceStatusMapper - processState - AddResourceStatusDurationInfo :: Failed', logKey);
                     });
 
@@ -220,7 +220,7 @@ var validateState = function (logKey, tenant, company, resourceId, reason) {
                                         deferred.resolve(returnData);
                                     }
                                     
-                                }).catch(function (ex) {
+                                }).catch(function () {
 
                                     returnData.isRequestValid = false;
                                     returnData.message = "Error occurred in processing state change request";
@@ -248,7 +248,7 @@ var validateState = function (logKey, tenant, company, resourceId, reason) {
                     deferred.resolve(returnData);
                 }
 
-            }).catch(function (ex) {
+            }).catch(function () {
 
                 returnData.isRequestValid = false;
                 returnData.message = "Error occurred in processing state change request";
@@ -368,7 +368,7 @@ var setResourceState = function (logKey, tenant, company, resourceId, resourceNa
                 });
             }else{
 
-                logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed :: %s', logKey, ex);
+                logger.error('LogKey: %s - ResourceStatusMapper - SetResourceState :: Failed', logKey);
                 deferred.resolve(result.message);
             }
         });

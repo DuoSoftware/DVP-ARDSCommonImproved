@@ -93,7 +93,23 @@ var resourceHandler = require('./ResourceHandler');
 
 //--------------Get Resource Status Info-------------------------
 
-resourceHandler.GetResourcesByTags('test', 1, 103, '', '', '').then(function (result) {
+//resourceHandler.GetResourcesByTags('test', 1, 103, '', '', '').then(function (result) {
+//    console.log(JSON.stringify(result));
+//}).catch(function (ex) {
+//    console.log(ex);
+//});
+
+//--------------Update Slot State Reserved-------------------------
+
+//resourceHandler.UpdateSlotStateReserved('test', 1, 103, 129, 'CALL', 0, '123123', 30, 10, 30, 3, '').then(function (result) {
+//    console.log(JSON.stringify(result));
+//}).catch(function (ex) {
+//    console.log(ex);
+//});
+
+//--------------Update Slot State Reserved-------------------------
+
+resourceHandler.UpdateSlotStateBySessionId('test', 1, 103, 129, 'CALL', '123123', 'completed', '', '', 'outbound').then(function (result) {
     console.log(JSON.stringify(result));
 }).catch(function (ex) {
     console.log(ex);
