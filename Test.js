@@ -3,6 +3,8 @@
  */
 
 var resourceHandler = require('./ResourceHandler');
+var requestServerHandler = require('./RequestServerHandler');
+var requestMetadataHandler = require('./RequestMetaDataHandler');
 
 //--------------Add Resource----------------------------
 
@@ -109,8 +111,63 @@ var resourceHandler = require('./ResourceHandler');
 
 //--------------Update Slot State Reserved-------------------------
 
-resourceHandler.UpdateSlotStateBySessionId('test', 1, 103, 129, 'CALL', '123123', 'completed', '', '', 'outbound').then(function (result) {
-    console.log(JSON.stringify(result));
-}).catch(function (ex) {
-    console.log(ex);
-});
+//resourceHandler.UpdateSlotStateBySessionId('test', 1, 103, 129, 'CALL', '123123', 'completed', '', '', 'outbound').then(function (result) {
+//    console.log(JSON.stringify(result));
+//}).catch(function (ex) {
+//    console.log(ex);
+//});
+
+//--------------Add Request Server-------------------------
+
+//requestServerHandler.AddRequestServer('test', 1, 103, {
+//    "ServerType":"CALLSERVER",
+//    "RequestType":"CALL",
+//    "CallbackUrl":"http://localhost:2228/api/Result",
+//    "CallbackOption":"POST",
+//    "QueuePositionCallbackUrl":"http://localhost:2228/api/QueuePosition",
+//    "ReceiveQueuePosition":true,
+//    "ServerID":"10"
+//}).then(function (result) {
+//    console.log(result);
+//}).catch(function (ex) {
+//    console.log(ex);
+//});
+
+//--------------Add Request Metadata-------------------------
+
+//requestMetadataHandler.AddRequestMetaData('test', 1, 103, {
+//    "ServerType":"CALLSERVER",
+//    "RequestType":"CALL",
+//    "ServingAlgo":"CALLBACK",
+//    "AttributeGroups":[55,57],
+//    "HandlingAlgo":"SINGLE",
+//    "SelectionAlgo":"BASIC",
+//    "MaxReservedTime":10,
+//    "MaxRejectCount":1500,
+//    "MaxAfterWorkTime":100,
+//    "ReqHandlingAlgo":"QUEUE",
+//    "ReqSelectionAlgo":"LONGESTWAITING"
+//}).then(function (result) {
+//    console.log(result);
+//}).catch(function (ex) {
+//    console.log(ex);
+//});
+
+
+//----------------------Add Request----------------------------
+
+//preProcessRequestData('test', 1, 103, {
+//        "ServerType": "CALLSERVER",
+//        "RequestType": "CALL",
+//        "SessionId": "1111",
+//        "Attributes": ["64", "60", "61"],
+//        "RequestServerId": "10",
+//        "Priority": "0",
+//        "ResourceCount": 1,
+//        "OtherInfo": ""
+//    }
+//).then(function (result) {
+//        console.log(JSON.stringify(result));
+//    }).catch(function (ex) {
+//        console.log(ex);
+//    });

@@ -301,9 +301,9 @@ var addQueueSetting = function (logKey, tenant, company, queueName, skills, serv
     try {
         logger.info('LogKey: %s - ResourceService - AddQueueSetting :: tenant: %d :: company: %d :: queueName: %s :: skills: %j :: serverType: %s :: requestType: %s', logKey, tenant, company, queueName, skills, serverType, requestType);
 
-        var rUrl = util.format('http://%s/DVP/API/%s/ResourceManager/QueueSetting', config.Services.resourceServiceHost, config.Services.resourceServiceVersion, resourceId);
+        var rUrl = util.format('http://%s/DVP/API/%s/ResourceManager/QueueSetting', config.Services.resourceServiceHost, config.Services.resourceServiceVersion);
         if (validator.isIP(config.Services.resourceServiceHost)) {
-            rUrl = util.format('http://%s:%s/DVP/API/%s/ResourceManager/QueueSetting', config.Services.resourceServiceHost, config.Services.resourceServicePort, config.Services.resourceServiceVersion, resourceId);
+            rUrl = util.format('http://%s:%s/DVP/API/%s/ResourceManager/QueueSetting', config.Services.resourceServiceHost, config.Services.resourceServicePort, config.Services.resourceServiceVersion);
         }
 
         var queueSettingObj = {QueueName :queueName,MaxWaitTime:"0",Skills:skills,PublishPosition:"false",CallAbandonedThreshold:"0",ServerType:serverType,RequestType:requestType};

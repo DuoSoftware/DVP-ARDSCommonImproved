@@ -53,7 +53,7 @@ var getAttributeGroupData = function (logKey, tenant, company, attributeGroupIds
                                         GroupId: attributeGroupWithDetails.GroupId,
                                         AttributeGroupName: attributeGroupWithDetails.GroupName,
                                         HandlingType: attributeGroupWithDetails.GroupType,
-                                        WeightPrecentage: attributeGroupWithDetails.Percentage.toString(),
+                                        WeightPercentage: attributeGroupWithDetails.Percentage.toString(),
                                         AttributeCode: attributeIdList,
                                         AttributeDetails: attributeDetailList
                                     };

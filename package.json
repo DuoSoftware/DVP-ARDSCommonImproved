@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/DuoSoftware/DVP-ARDSCommonImproved#readme",
   "dependencies": {
+    "amqp": "^0.2.6",
     "async": "^2.5.0",
     "config": "^1.26.2",
     "deepcopy": "^0.6.3",
