@@ -6,6 +6,7 @@ var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var redisHandler = require('./RedisHandler');
 var restClient = require('../RestClient');
 var tagHandler = require('./TagHandler');
+var requestQueueAndStatusHandler = require('./RequestQueueAndStatusHandler');
 var q = require('q');
 var util = require('util');
 
@@ -222,7 +223,7 @@ var sendRoutingCallback = function (logKey, callbackUrl, callbackOption, callbac
     var deferred = q.defer();
 
     try {
-        logger.info('LogKey: %s - RequestServerHandler - SendRoutingCallback :: callbackUrl: %s :: callbackOption: %s :: callbackOption: %j', logKey, callbackUrl, callbackOption, callbackData);
+        logger.info('LogKey: %s - RequestServerHandler - SendRoutingCallback :: callbackUrl: %s :: callbackOption: %s :: callbackData: %j', logKey, callbackUrl, callbackOption, callbackData);
 
         switch (callbackOption.toLowerCase()) {
             case 'get':
@@ -294,6 +295,63 @@ var sendRoutingCallback = function (logKey, callbackUrl, callbackOption, callbac
     return deferred.promise;
 };
 
+var sendPositionCallback = function (logKey, tenant, company, requestType, queueId, positionUrl, positionOption) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - RequestServerHandler - SendPositionCallback :: tenant: %d :: company: %d :: requestType: %s :: queueId: %s :: positionUrl: %s :: positionOption: %s', logKey, tenant, company, requestType, queueId, positionUrl, positionOption);
+
+        requestQueueAndStatusHandler.GetQueuePositions(logKey, tenant, company, requestType, queueId).then(function (queuePositionData) {
+
+            switch (positionOption.toLowerCase()) {
+                case 'get':
+                    var httpUrl = util.format('%s? %s', positionUrl, JSON.stringify(queuePositionData));
+                    restClient.DoGetExternal(logKey, httpUrl).then(function (response) {
+
+                        logger.info('LogKey: %s - RequestServerHandler - SendPositionCallback - DoPostExternal success :: %s', logKey, response);
+                        deferred.resolve('Send queue positions success');
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - RequestServerHandler - SendPositionCallback - DoGetExternal failed :: %s', logKey, ex);
+                        deferred.reject('Send queue positions failed');
+                    });
+
+                    break;
+
+                case 'post':
+                    restClient.DoPostExternal(logKey, positionUrl, queuePositionData).then(function (response) {
+
+                        logger.info('LogKey: %s - RequestServerHandler - SendPositionCallback - DoPostExternal success :: %s', logKey, response);
+                        deferred.resolve('Send queue positions success');
+
+                    }).catch(function (ex) {
+
+                        logger.error('LogKey: %s - RequestServerHandler - SendPositionCallback - DoPostExternal failed :: %s', logKey, ex);
+                        deferred.reject('Send queue positions failed');
+                    });
+                    break;
+
+                default :
+                    break;
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - RequestServerHandler - SendPositionCallback - GetQueuePositions failed :: %s', logKey, ex);
+            deferred.reject('Send queue positions failed');
+        });
+
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - RequestServerHandler - SendPositionCallback failed :: %s', logKey, ex);
+        deferred.reject('Send queue positions failed');
+    }
+
+    return deferred.promise;
+};
+
 
 module.exports.AddRequestServer = addRequestServer;
 module.exports.SetRequestServer = setRequestServer;
@@ -302,3 +360,4 @@ module.exports.GetRequestServerByType = getRequestServerByType;
 module.exports.RemoveRequestServer = removeRequestServer;
 
 module.exports.SendRoutingCallback = sendRoutingCallback;
+module.exports.SendPositionCallback = sendPositionCallback;
