@@ -488,6 +488,7 @@ module.exports.SetRequestStatus = setRequestStatus;
 module.exports.GetRequestStatus = getRequestStatus;
 module.exports.RemoveRequestStatus = removeRequestStatus;
 
+module.exports.SetNextProcessingItem = setNextProcessingItem;
 module.exports.AddRequestToQueue = addRequestToQueue;
 module.exports.AddRequestToRejectQueue = addRequestToRejectQueue;
 module.exports.RemoveRequestFromQueue = removeRequestFromQueue;

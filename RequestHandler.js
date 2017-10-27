@@ -9,6 +9,7 @@ var tagHandler = require('./TagHandler');
 var requestServerHandler = require('./RequestServerHandler');
 var requestMetadataHandler = require('./RequestMetaDataHandler');
 var requestQueueAndStatusHandler = require('./RequestQueueAndStatusHandler');
+var routingService = require('./services/RoutingService');
 var q = require('q');
 var async = require('async');
 var util = require('util');
@@ -244,12 +245,30 @@ var addRequest = function (logKey, tenant, company, preRequestData) {
 
                             logger.error('LogKey: %s - RequestHandler - AddRequest - AddRequestToQueue failed :: %s', logKey, ex);
                             removeRequest(logKey, tenant, company, requestObj.SessionId, 'failed');
-                            deferred.reject('Add Request to Queue Failed. sessionId :: " + requestObj.SessionId');
+                            deferred.reject('Add Request to Queue Failed. sessionId :: ' + requestObj.SessionId);
                         });
                         break;
 
                     case 'direct':
-                        //Todo pick resource directly
+
+                        var jsonOtherInfo = JSON.stringify(requestObj.OtherInfo);
+                        routingService.PickResource(logKey, tenant, company, requestObj.ResourceCount, requestObj.SessionId, requestObj.ServerType, requestObj.RequestType, requestObj.SelectionAlgo, requestObj.HandlingAlgo, jsonOtherInfo).then(function (routingResponse) {
+
+                            if(requestObj.ServingAlgo.toLowerCase() === 'callback') {
+
+                                deferred.resolve('ARDS accept the request');
+
+                            }else{
+
+                                return continueRequest(logKey, requestObj.SessionId, routingResponse);
+                            }
+
+                        }).catch(function (ex) {
+
+                            logger.error('LogKey: %s - RequestHandler - AddRequest - PickResource failed :: %s', logKey, ex);
+                            removeRequest(logKey, tenant, company, requestObj.SessionId, 'failed');
+                            deferred.reject('Pick Resource Failed. sessionId :: ' + requestObj.SessionId);
+                        });
                         break;
                     default :
 
@@ -402,7 +421,7 @@ var rejectRequest = function (logKey, tenant, company, sessionId, reason) {
 
                     return removeRequest(logKey, tenant, company, requestObj.SessionId, reason);
 
-                }else{
+                } else {
 
                     return requestQueueAndStatusHandler.AddRequestToRejectQueue(logKey, tenant, company, requestObj.RequestType, requestObj.QueueId, requestObj.SessionId);
 
@@ -429,7 +448,147 @@ var rejectRequest = function (logKey, tenant, company, sessionId, reason) {
     return deferred.promise;
 };
 
+var continueRequest = function (logKey, tenant, company, sessionId, routingResponse) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - RequestHandler - ContinueRequest :: tenant: %d :: company: %d :: sessionId: %s :: routingResponse: %j', logKey, tenant, company, sessionId, routingResponse);
+
+        if (routingResponse && routingResponse != "" && routingResponse != "No matching resources at the moment") {
+
+            var requestKey = util.format('Request:%d:%d:%s', tenant, company, sessionId);
+            redisHandler.R_Get(logKey, requestKey).then(function (requestData) {
+
+                if (requestData) {
+
+                    var requestObj = JSON.parse(requestData);
+                    var routingResponseObj = JSON.parse(routingResponse);
+
+                    var routeObj = {
+                        Company: requestObj.Company.toString(),
+                        Tenant: requestObj.Tenant.toString(),
+                        ServerType: requestObj.ServerType,
+                        RequestType: requestObj.RequestType,
+                        SessionID: requestObj.SessionId,
+                        Skills: requestObj.QueueName,
+                        OtherInfo: requestObj.OtherInfo
+                    };
+
+                    if (Array.isArray(routingResponseObj)) {
+                        var resInfoData = [];
+                        routingResponseObj.forEach(function (resData) {
+                            resInfoData.push(JSON.parse(resData));
+                        });
+
+                        routeObj.ResourceInfo = resInfoData;
+
+                    } else {
+
+                        routeObj.ResourceInfo = routingResponseObj;
+
+                    }
+
+                    switch (requestObj.ServingAlgo.toLowerCase()) {
+                        case "callback":
+
+                            var asyncTasks = [
+                                function (callback) {
+                                    requestQueueAndStatusHandler.SetRequestStatus(logKey, requestObj.Tenant, requestObj.Company, requestObj.SessionId, 'TRYING').then(function (result) {
+
+                                        logger.info('LogKey: %s - RequestHandler - ContinueRequest - SetRequestStatus success :: %s', logKey, result);
+                                        callback(null, result);
+
+                                    }).catch(function (ex) {
+
+                                        logger.error('LogKey: %s - RequestHandler - ContinueRequest - SetRequestStatus failed :: %s', logKey, ex);
+                                        callback(ex, null);
+                                    });
+                                }
+                            ];
+
+                            if (requestObj.ReqHandlingAlgo == "QUEUE") {
+
+                                asyncTasks.push(
+                                    function (callback) {
+                                        var processingHashKey = util.format('ProcessingHash:%d:%d:%s', requestObj.Tenant, requestObj.Company, requestObj.RequestType);
+                                        requestQueueAndStatusHandler.SetNextProcessingItem(logKey, requestObj.QueueId, processingHashKey, requestObj.SessionId).then(function (result) {
+
+                                            if (requestObj.QPositionEnable) {
+                                                requestServerHandler.SendPositionCallback(logKey, requestObj.Tenant, requestObj.Company, requestObj.RequestType, requestObj.QueueId, requestObj.QPositionUrl, requestObj.CallbackOption);
+                                            }
+                                            logger.info('LogKey: %s - RequestHandler - ContinueRequest - SetNextProcessingItem success :: %s', logKey, result);
+                                            callback(null, result);
+
+                                        }).catch(function (ex) {
+
+                                            logger.error('LogKey: %s - RequestHandler - ContinueRequest - SetNextProcessingItem failed :: %s', logKey, ex);
+                                            callback(ex, null);
+                                        });
+                                    }
+                                );
+
+                            }
+
+                            async.parallel(async.reflectAll(asyncTasks), function () {
+
+                                requestServerHandler.SendRoutingCallback(logKey, requestObj.RequestServerUrl, requestObj.CallbackOption, routeObj).then(function (result) {
+
+                                    if(result && result === 're-addRequired'){
+
+                                        logger.error('LogKey: %s - RequestHandler - ContinueRequest - SendRoutingCallback failed, continue reject request', logKey);
+                                        rejectRequest(logKey, requestObj.Tenant, requestObj.Company, requestObj.SessionId, 'Send callback failed');
+
+                                    }else{
+                                        logger.info('LogKey: %s - RequestHandler - ContinueRequest - SendRoutingCallback success', logKey);
+                                    }
+
+                                }).catch(function (ex) {
+
+                                    logger.error('LogKey: %s - RequestHandler - ContinueRequest - SendRoutingCallback failed, continue reject request :: %s', logKey, ex);
+                                    rejectRequest(logKey, requestObj.Tenant, requestObj.Company, requestObj.SessionId, 'Send callback failed');
+                                });
+
+                                deferred.resolve('ARDS continue process finished');
+
+                            });
+
+                            break;
+
+                        default :
+
+                            logger.info('LogKey: %s - RequestHandler - ContinueRequest - pick resource completed :: %j', logKey, routeObj);
+                            deferred.resolve(routeObj);
+                            break;
+                    }
+                } else {
+
+                    logger.error('LogKey: %s - RequestHandler - ContinueRequest - No request found :: %s', logKey, requestKey);
+                    deferred.reject('No request found');
+                }
+
+            }).catch(function (ex) {
+
+                logger.error('LogKey: %s - RequestHandler - ContinueRequest - R_Get failed :: %s', logKey, ex);
+                deferred.reject(ex);
+            });
+
+        } else {
+
+            logger.info('LogKey: %s - RequestHandler - ContinueRequest - No matching resources at the moment', logKey);
+            deferred.reject('No matching resources at the moment');
+        }
+
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - RequestHandler - ContinueRequest failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
 
 module.exports.AddRequest = addRequest;
 module.exports.RemoveRequest = removeRequest;
 module.exports.RejectRequest = rejectRequest;
+module.exports.ContinueRequest = continueRequest;

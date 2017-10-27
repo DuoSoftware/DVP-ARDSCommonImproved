@@ -26,7 +26,7 @@ var redisSetting = {
     retryStrategy: function (times) {
         return Math.min(times * 50, 2000);
     },
-    reconnectOnError: function (err) {
+    reconnectOnError: function () {
         return true;
     }
 };
