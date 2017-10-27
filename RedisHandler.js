@@ -143,14 +143,19 @@ var rSetNx = function (logKey, key, value) {
     try {
         logger.info('LogKey: %s - Redis SET NX :: key: %s :: value: %s', logKey, key, value);
 
-        client.setnx(key, value, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis SET NX failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis SET NX success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            client.setnx(key, value, function (err, result) {
+                lock.unlock().catch(function (err) {
+                    logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+                });
+                if (err) {
+                    logger.error('LogKey: %s - Redis SET NX failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis SET NX success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis SET NX failed :: %s', logKey, ex);
@@ -235,14 +240,19 @@ var rIncr = function (logKey, key) {
     try {
         logger.info('LogKey: %s - Redis INCR :: key: %s', logKey, key);
 
-        client.incr(key, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis INCR failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis INCR success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            client.incr(key, function (err, result) {
+                lock.unlock().catch(function (err) {
+                    logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+                });
+                if (err) {
+                    logger.error('LogKey: %s - Redis INCR failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis INCR success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis INCR failed :: %s', logKey, ex);
@@ -282,14 +292,19 @@ var rRPush = function (logKey, key, value) {
     try {
         logger.info('LogKey: %s - Redis RPush :: key: %s :: value: %s', logKey, key, value);
 
-        client.rpush(key, value, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis RPush failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis RPush success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            client.rpush(key, value, function (err, result) {
+                lock.unlock().catch(function (err) {
+                    logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+                });
+                if (err) {
+                    logger.error('LogKey: %s - Redis RPush failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis RPush success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis RPush failed :: %s', logKey, ex);
@@ -305,14 +320,19 @@ var rLPush = function (logKey, key, value) {
     try {
         logger.info('LogKey: %s - Redis LPush :: key: %s :: value: %s', logKey, key, value);
 
-        client.lpush(key, value, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis LPush failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis LPush success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            client.lpush(key, value, function (err, result) {
+                lock.unlock().catch(function (err) {
+                    logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+                });
+                if (err) {
+                    logger.error('LogKey: %s - Redis LPush failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis LPush success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis LPush failed :: %s', logKey, ex);
@@ -421,14 +441,19 @@ var rHSet = function (logKey, key, field, value) {
     try {
         logger.info('LogKey: %s - Redis HSET :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
 
-        client.hset(key, field, value, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis HSET failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis HSET success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            client.hset(key, field, value, function (err, result) {
+                lock.unlock().catch(function (err) {
+                    logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+                });
+                if (err) {
+                    logger.error('LogKey: %s - Redis HSET failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis HSET success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis HSET failed :: %s', logKey, ex);
@@ -443,15 +468,19 @@ var rHSetNx = function (logKey, key, field, value) {
 
     try {
         logger.info('LogKey: %s - Redis HSETNX :: key: %s ::  field: %s :: value: %s', logKey, key, field, value);
-
-        client.hsetnx(key, field, value, function (err, result) {
-            if (err) {
-                logger.error('LogKey: %s - Redis HSETNX failed :: %s', logKey, err);
-                deferred.reject(err);
-            } else {
-                logger.info('LogKey: %s - Redis HSETNX success :: %s', logKey, result);
-                deferred.resolve(result);
-            }
+        redLock.lock('lock:' + key, 500).then(function (lock) {
+            lock.unlock().catch(function (err) {
+                logger.error('LogKey: %s - Redis lock failed :: %s', logKey, err);
+            });
+            client.hsetnx(key, field, value, function (err, result) {
+                if (err) {
+                    logger.error('LogKey: %s - Redis HSETNX failed :: %s', logKey, err);
+                    deferred.reject(err);
+                } else {
+                    logger.info('LogKey: %s - Redis HSETNX success :: %s', logKey, result);
+                    deferred.resolve(result);
+                }
+            });
         });
     } catch (ex) {
         logger.error('LogKey: %s - Redis HSETNX failed :: %s', logKey, ex);

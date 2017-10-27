@@ -219,14 +219,14 @@ var addRequest = function (logKey, tenant, company, preRequestData) {
                 requestTags.push(util.format('%s:attribute_%s', requestObj.RequestType, attribute));
             });
 
-            tagHandler.SetTags(logKey, 'Tag:Request', requestTags, requestKey).then(function (requestTagResult) {
-
-                logger.info('LogKey: %s - RequestHandler - AddRequest - SetTags success :: %s', logKey, requestTagResult);
-                return redisHandler.R_Set(logKey, requestKey, JSON.stringify(requestObj));
-
-            }).then(function (requestResult) {
+            redisHandler.R_Set(logKey, requestKey, JSON.stringify(requestObj)).then(function (requestResult) {
 
                 logger.info('LogKey: %s - RequestHandler - AddRequest - R_Set request success :: %s', logKey, requestResult);
+                return tagHandler.SetTags(logKey, 'Tag:Request', requestTags, requestKey);
+
+            }).then(function (requestTagResult) {
+
+                logger.info('LogKey: %s - RequestHandler - AddRequest - SetTags success :: %s', logKey, requestTagResult);
 
                 switch (requestObj.ReqHandlingAlgo.toLowerCase()) {
                     case 'queue':
@@ -243,17 +243,18 @@ var addRequest = function (logKey, tenant, company, preRequestData) {
                         }).catch(function (ex) {
 
                             logger.error('LogKey: %s - RequestHandler - AddRequest - AddRequestToQueue failed :: %s', logKey, ex);
-                            //Todo remove request
+                            removeRequest(logKey, tenant, company, requestObj.SessionId, 'failed');
                             deferred.reject('Add Request to Queue Failed. sessionId :: " + requestObj.SessionId');
                         });
                         break;
 
                     case 'direct':
+                        //Todo pick resource directly
                         break;
                     default :
 
                         logger.error('LogKey: %s - RequestHandler - AddRequest - No request handling algorithm found', logKey);
-                        //Todo remove request
+                        removeRequest(logKey, tenant, company, requestObj.SessionId, 'failed');
                         deferred.reject('No request handling algorithm found');
                         break;
 
@@ -261,7 +262,7 @@ var addRequest = function (logKey, tenant, company, preRequestData) {
             }).catch(function (ex) {
 
                 logger.error('LogKey: %s - RequestHandler - AddRequest - set request data failed :: %s', logKey, ex);
-                //Todo remove request
+                removeRequest(logKey, tenant, company, requestObj.SessionId, 'failed');
                 deferred.reject('Add request failed :: Set request data');
             });
 
@@ -279,3 +280,156 @@ var addRequest = function (logKey, tenant, company, preRequestData) {
 
     return deferred.promise;
 };
+
+var removeRequest = function (logKey, tenant, company, sessionId, reason) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - RemoveRequest :: tenant: %d :: company: %d :: sessionId: %s :: reason: %s', logKey, tenant, company, sessionId, reason);
+
+        var requestKey = util.format('Request:%d:%d:%s', tenant, company, sessionId);
+        redisHandler.R_Get(logKey, requestKey).then(function (requestData) {
+
+            if (requestData) {
+
+                var requestObj = JSON.parse(requestData);
+                var postAsyncTasks = [
+                    function (callback) {
+                        var pubRequestRemoved = util.format("EVENT:%s:%s:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, "ARDS", "REQUEST", "REMOVED", reason, "", requestObj.SessionId);
+                        redisHandler.R_Publish(logKey, 'events', pubRequestRemoved).then(function (result) {
+                            callback(null, result);
+                        }).catch(function (ex) {
+                            callback(ex, null);
+                        });
+                    }
+                ];
+
+                if (requestObj.ReqHandlingAlgo === "QUEUE") {
+
+                    postAsyncTasks.push(
+                        function (callback) {
+                            requestQueueAndStatusHandler.RemoveRequestFromQueue(logKey, tenant, company, requestObj.RequestType, requestObj.QueueId, requestObj.SessionId).then(function (result) {
+                                if (requestObj.QPositionEnable) {
+                                    requestServerHandler.SendPositionCallback(logKey, tenant, company, requestObj.RequestType, requestObj.QueueId, requestObj.QPositionUrl, requestObj.CallbackOption);
+                                }
+                                callback(null, result);
+                            }).catch(function (ex) {
+                                callback(ex, null);
+                            });
+                        }
+                    );
+
+                    if (reason == "NONE") {
+
+                        var pubQueueId = requestObj.QueueId.replace(/:/g, "-");
+                        var pubQueueAnswered = util.format("EVENT:%s:%s:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, "ARDS", "QUEUE", "ANSWERED", pubQueueId, "", requestObj.SessionId);
+                        postAsyncTasks.push(
+                            function (callback) {
+                                redisHandler.R_Publish(logKey, 'events', pubQueueAnswered).then(function (result) {
+                                    callback(null, result);
+                                }).catch(function (ex) {
+                                    callback(ex, null);
+                                });
+                            }
+                        );
+                    }
+                }
+
+                requestQueueAndStatusHandler.RemoveRequestStatus(logKey, tenant, company, requestObj.SessionId).then(function (requestStatusResult) {
+
+                    logger.info('LogKey: %s - RequestHandler - RemoveRequest - RemoveRequestStatus process :: %s', logKey, requestKey, requestStatusResult);
+                    return tagHandler.RemoveTags(logKey, requestKey);
+
+                }).then(function (removeTagsResult) {
+
+                    logger.info('LogKey: %s - RequestHandler - RemoveRequest - Remove %s tag process :: %s', logKey, requestKey, removeTagsResult);
+                    return redisHandler.R_Del(logKey, requestKey);
+
+                }).then(function (result) {
+
+                    async.parallel(async.reflectAll(postAsyncTasks), function () {
+
+                        logger.info('LogKey: %s - RequestHandler - RemoveRequest - Remove %s request process finished:: %s', logKey, requestKey, result);
+                        deferred.resolve('Remove request process finished');
+
+                    });
+
+                }).catch(function (ex) {
+
+                    logger.info('LogKey: %s - RequestHandler - RemoveRequest - Remove %s request process failed :: %s', logKey, requestKey, ex);
+                    deferred.reject('Remove request process failed')
+
+                });
+
+            } else {
+
+                logger.error('LogKey: %s - RequestHandler - RemoveRequest - No request found', logKey);
+                deferred.reject('No request found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - RequestHandler - RemoveRequest - R_Get failed :: %s', logKey, ex);
+            deferred.reject(ex);
+        })
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - RequestHandler - RemoveRequest failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+var rejectRequest = function (logKey, tenant, company, sessionId, reason) {
+    var deferred = q.defer();
+
+    try {
+        logger.info('LogKey: %s - ResourceHandler - RejectRequest :: tenant: %d :: company: %d :: sessionId: %s :: reason: %s', logKey, tenant, company, sessionId, reason);
+
+        var requestKey = util.format('Request:%d:%d:%s', tenant, company, sessionId);
+        redisHandler.R_Get(logKey, requestKey).then(function (requestData) {
+
+            if (requestData) {
+
+                var requestObj = JSON.parse(requestData);
+                if (reason == "NoSession" || reason == "ClientRejected") {
+
+                    var pubQueueId = requestObj.QueueId.replace(/:/g, "-");
+                    var pubMessage = util.format("EVENT:%s:%s:%s:%s:%s:%s:%s:%s:YYYY", tenant, company, "ARDS", "QUEUE", "DROPPED", pubQueueId, "", requestObj.SessionId);
+                    redisHandler.R_Publish(logKey, "events", pubMessage);
+
+                    return removeRequest(logKey, tenant, company, requestObj.SessionId, reason);
+
+                }else{
+
+                    return requestQueueAndStatusHandler.AddRequestToRejectQueue(logKey, tenant, company, requestObj.RequestType, requestObj.QueueId, requestObj.SessionId);
+
+                }
+
+            } else {
+
+                logger.error('LogKey: %s - RequestHandler - RejectRequest - No request found', logKey);
+                deferred.reject('No request found');
+            }
+
+        }).catch(function (ex) {
+
+            logger.error('LogKey: %s - RequestHandler - RejectRequest - R_Get failed :: %s', logKey, ex);
+            deferred.reject(ex);
+        })
+
+    } catch (ex) {
+
+        logger.error('LogKey: %s - RequestHandler - RejectRequest failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
+
+module.exports.AddRequest = addRequest;
+module.exports.RemoveRequest = removeRequest;
+module.exports.RejectRequest = rejectRequest;
