@@ -5,7 +5,6 @@
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var amqp = require('amqp');
 var config = require('config');
-var util = require('util');
 var q = require('q');
 
 
