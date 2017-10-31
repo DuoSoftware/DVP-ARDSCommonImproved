@@ -118,6 +118,42 @@ var doPostNotification = function (logKey, tenant, company, url, eventName, even
     return deferred.promise;
 };
 
+var doPostFormData = function (logKey, tenant, company, url, formData) {
+    var deferred = q.defer();
+
+    try{
+        logger.info('LogKey: %s - Request HTTP POST FormData :: tenant: %d :: company: %d :: url: %s :: formData: %s', logKey, tenant, company, url, formData);
+
+        var options = {
+            url: url,
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'authorization': util.format('bearer %s', config.Services.accessToken),
+                'companyinfo': util.format('%d:%d', tenant, company)
+            },
+            formData: formData
+        };
+
+        request(options, function optionalCallback(err, httpResponse, body) {
+            if (err) {
+                logger.error('LogKey: %s - Request HTTP POST FormData failed :: %s', logKey, err);
+                deferred.reject(err);
+            }else{
+                var response = {code: httpResponse.statusCode, result: body?JSON.parse(body):undefined};
+                logger.info('LogKey: %s - Request HTTP POST FormData success :: %j', logKey, response);
+                deferred.resolve(response);
+            }
+        });
+
+    }catch(ex){
+        logger.error('LogKey: %s - Request HTTP POST FormData failed :: %s', logKey, ex);
+        deferred.reject(ex);
+    }
+
+    return deferred.promise;
+};
+
 var doGetExternal = function (logKey, url) {
     var deferred = q.defer();
 
@@ -188,5 +224,6 @@ var doPostExternal = function (logKey, url, postData) {
 module.exports.DoGetInternal = doGetInternal;
 module.exports.DoPostInternal = doPostInternal;
 module.exports.DoPostNotification = doPostNotification;
+module.exports.DoPostFormData = doPostFormData;
 module.exports.DoGetExternal = doGetExternal;
 module.exports.DoPostExternal = doPostExternal;
