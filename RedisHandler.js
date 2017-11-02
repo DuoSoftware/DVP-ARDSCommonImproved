@@ -5,7 +5,7 @@
 var logger = require('dvp-common/LogHandler/CommonLogHandler.js').logger;
 var q = require('q');
 var redis = require('ioredis');
-var redisLock = require('redLock');
+var redisLock = require('redlock');
 var config = require('config');
 
 var redisIp = config.Redis.ip;
