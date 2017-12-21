@@ -1,6 +1,6 @@
 {
   "name": "dvp-ards_common_improved",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Improved version of ards common library",
   "main": "index.js",
   "scripts": {
